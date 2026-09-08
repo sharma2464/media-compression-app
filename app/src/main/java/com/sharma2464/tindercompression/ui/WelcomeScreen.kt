@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,7 +20,11 @@ import androidx.compose.ui.unit.sp
 
 /** First-run screen shown before a folder has been picked for review. */
 @Composable
-fun WelcomeScreen(onChooseFolder: () -> Unit) {
+fun WelcomeScreen(
+    onChooseFolder: () -> Unit,
+    hasFullStorageAccess: Boolean = true,
+    onGrantFullStorageAccess: () -> Unit = {},
+) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(32.dp),
@@ -39,6 +44,16 @@ fun WelcomeScreen(onChooseFolder: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
             )
+            if (!hasFullStorageAccess) {
+                Text(
+                    "Grant full storage access so backups and timestamps stay reliable.",
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                )
+                OutlinedButton(onClick = onGrantFullStorageAccess) {
+                    Text("Grant full storage access")
+                }
+            }
             Button(onClick = onChooseFolder, modifier = Modifier.padding(top = 12.dp)) {
                 Text("Choose a folder to review")
             }

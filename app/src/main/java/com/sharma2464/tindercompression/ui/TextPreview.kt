@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 private const val PREVIEW_CHAR_LIMIT = 4000
 
 @Composable
-fun TextPreview(uri: Uri) {
+fun TextPreview(uri: Uri, modifier: Modifier = Modifier.height(320.dp)) {
     val context = LocalContext.current
     var text by remember(uri) { mutableStateOf("Loading…") }
     remember(uri) {
@@ -28,5 +28,5 @@ fun TextPreview(uri: Uri) {
         }
         Unit
     }
-    Text(text, modifier = Modifier.height(320.dp).verticalScroll(rememberScrollState()))
+    Text(text, modifier = modifier.verticalScroll(rememberScrollState()))
 }

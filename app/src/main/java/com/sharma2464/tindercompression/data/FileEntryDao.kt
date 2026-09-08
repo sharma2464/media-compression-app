@@ -27,6 +27,9 @@ interface FileEntryDao {
     @Query("SELECT * FROM file_entries ORDER BY id")
     fun observeAll(): Flow<List<FileEntry>>
 
+    @Query("SELECT * FROM file_entries WHERE decision = 'DONE' ORDER BY reviewedAt DESC")
+    fun observeCompleted(): Flow<List<FileEntry>>
+
     @Query("SELECT COUNT(*) FROM file_entries WHERE decision = 'PENDING' OR decision = 'LATER'")
     fun observePendingCount(): Flow<Int>
 }

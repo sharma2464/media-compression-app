@@ -15,7 +15,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 
 @Composable
-fun VideoPreview(uri: Uri) {
+fun VideoPreview(uri: Uri, modifier: Modifier = Modifier.fillMaxWidth().height(320.dp)) {
     val context = LocalContext.current
     val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
@@ -24,8 +24,10 @@ fun VideoPreview(uri: Uri) {
         }
     }
     DisposableEffect(uri) { onDispose { player.release() } }
+    // PlayerView ships its own play/pause/seek transport controls by default — no extra
+    // wiring needed for the "play and pause while comparing" requirement.
     AndroidView(
-        modifier = Modifier.fillMaxWidth().height(320.dp),
+        modifier = modifier,
         factory = { PlayerView(it).apply { this.player = player } },
     )
 }

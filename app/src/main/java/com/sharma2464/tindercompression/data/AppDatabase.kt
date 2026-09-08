@@ -21,7 +21,7 @@ class Converters {
     fun toKind(value: String): FileKind = FileKind.valueOf(value)
 }
 
-@Database(entities = [FileEntry::class], version = 1, exportSchema = false)
+@Database(entities = [FileEntry::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun fileEntryDao(): FileEntryDao
@@ -34,7 +34,11 @@ abstract class AppDatabase : RoomDatabase() {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "tinder-compression.db",
-            ).build().also { instance = it }
+            )
+                // ponytail: solo-dev tool, re-scanning is cheap — destructive migration
+                // instead of a real migration path for schema bumps.
+                .fallbackToDestructiveMigration()
+                .build().also { instance = it }
         }
     }
 }

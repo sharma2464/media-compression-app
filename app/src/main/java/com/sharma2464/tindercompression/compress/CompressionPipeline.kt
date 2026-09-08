@@ -8,6 +8,9 @@ import com.sharma2464.tindercompression.data.Decision
 import com.sharma2464.tindercompression.data.FileEntry
 import com.sharma2464.tindercompression.data.FileKind
 import com.sharma2464.tindercompression.scan.FolderScanner
+import com.sharma2464.tindercompression.scan.findByRelativePath
+import com.sharma2464.tindercompression.scan.hasFullStorageAccess
+import com.sharma2464.tindercompression.scan.resolveRealFile
 import com.sharma2464.tindercompression.settings.AppSettings
 import java.io.File
 
@@ -24,8 +27,12 @@ class CompressionPipeline(private val context: Context) {
         val root = DocumentFile.fromTreeUri(context, rootUri) ?: return
         val sourceDoc = findByRelativePath(root, entry.relativePath) ?: return
 
-        val workDir = File(context.cacheDir, "compress_work").apply { mkdirs() }
-        val localCopy = File(workDir, entry.displayName)
+        // Input and output live in separate directories: compressors write passthrough
+        // results as File(workDir, input.name), which would collide with input itself
+        // (silently deleting it before reading) if both were in the same directory.
+        val inputDir = File(context.cacheDir, "compress_work/in").apply { mkdirs() }
+        val workDir = File(context.cacheDir, "compress_work/out").apply { mkdirs() }
+        val localCopy = File(inputDir, entry.displayName)
         context.contentResolver.openInputStream(sourceDoc.uri)!!.use { input ->
             localCopy.outputStream().use { input.copyTo(it) }
         }
@@ -53,6 +60,7 @@ class CompressionPipeline(private val context: Context) {
                 compressedSizeBytes = result.outputFile.length(),
                 wasLossless = result.wasLossless,
                 reviewedAt = System.currentTimeMillis(),
+                backupRelativePath = entry.relativePath,
             ),
         )
 
@@ -71,21 +79,17 @@ class CompressionPipeline(private val context: Context) {
         context.contentResolver.openOutputStream(sourceDoc.uri, "wt")!!.use { out ->
             newContent.inputStream().use { it.copyTo(out) }
         }
-        // Best-effort: SAF providers don't reliably support setLastModified; local storage does.
-        runCatching { File(sourceDoc.uri.path ?: return@runCatching).setLastModified(originalLastModified) }
-    }
-
-    private fun findByRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {
-        var current = root
-        for (segment in relativePath.split("/")) {
-            current = current.findFile(segment) ?: return null
+        // sourceDoc.uri.path is the encoded SAF document path, not a real filesystem path,
+        // so this only works (and needs) MANAGE_EXTERNAL_STORAGE to resolve+touch the real file.
+        if (hasFullStorageAccess()) {
+            runCatching { resolveRealFile(sourceDoc.uri)?.setLastModified(originalLastModified) }
         }
-        return current
     }
 
     private fun ensureBackupPath(root: DocumentFile, relativePath: String): DocumentFile {
         val segments = relativePath.split("/")
-        var dir = root.findFile(FolderScanner.BACKUP_DIR_NAME) ?: root.createDirectory(FolderScanner.BACKUP_DIR_NAME)!!
+        val backupDirName = FolderScanner.backupDirName(root)
+        var dir = root.findFile(backupDirName) ?: root.createDirectory(backupDirName)!!
         for (segment in segments.dropLast(1)) {
             dir = dir.findFile(segment) ?: dir.createDirectory(segment)!!
         }
@@ -96,7 +100,7 @@ class CompressionPipeline(private val context: Context) {
     private fun compressorFor(kind: FileKind): Compressor = when (kind) {
         FileKind.PHOTO -> PhotoCompressor()
         FileKind.VIDEO -> VideoCompressor(context)
-        FileKind.LIVE_PHOTO -> LivePhotoCompressor()
+        FileKind.LIVE_PHOTO -> LivePhotoCompressor(context)
         FileKind.PDF -> PdfCompressor(context)
         FileKind.DOCUMENT -> ZipRecompressor()
         FileKind.TEXT, FileKind.OTHER -> TextCompressor()

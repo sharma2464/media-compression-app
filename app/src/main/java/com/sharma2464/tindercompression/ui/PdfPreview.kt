@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 
 /** First-page thumbnail via the platform's native PdfRenderer — no library needed. */
 @Composable
-fun PdfPreview(uri: Uri) {
+fun PdfPreview(uri: Uri, modifier: Modifier = Modifier.fillMaxWidth().height(320.dp)) {
     val context = LocalContext.current
     var bitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
     remember(uri) {
@@ -37,6 +37,6 @@ fun PdfPreview(uri: Uri) {
         }
         Unit
     }
-    bitmap?.let { Image(it.asImageBitmap(), contentDescription = "PDF page 1", modifier = Modifier.fillMaxWidth().height(320.dp)) }
+    bitmap?.let { Image(it.asImageBitmap(), contentDescription = "PDF page 1", modifier = modifier) }
         ?: Text("Rendering PDF…")
 }

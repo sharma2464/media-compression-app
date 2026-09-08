@@ -1,0 +1,104 @@
+package com.sharma2464.tindercompression.compress
+
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
+import com.sharma2464.tindercompression.data.AppDatabase
+import com.sharma2464.tindercompression.data.Decision
+import com.sharma2464.tindercompression.data.FileEntry
+import com.sharma2464.tindercompression.data.FileKind
+import com.sharma2464.tindercompression.scan.FolderScanner
+import com.sharma2464.tindercompression.settings.AppSettings
+import java.io.File
+
+/**
+ * Runs the backup -> compress -> verify -> replace steps for one [FileEntry].
+ * Backup always happens first and is never skipped, even if compression later fails.
+ */
+class CompressionPipeline(private val context: Context) {
+    private val settings = AppSettings(context)
+    private val dao = AppDatabase.get(context).fileEntryDao()
+
+    suspend fun process(entry: FileEntry) {
+        val rootUri = Uri.parse(settings.rootTreeUri ?: return)
+        val root = DocumentFile.fromTreeUri(context, rootUri) ?: return
+        val sourceDoc = findByRelativePath(root, entry.relativePath) ?: return
+
+        val workDir = File(context.cacheDir, "compress_work").apply { mkdirs() }
+        val localCopy = File(workDir, entry.displayName)
+        context.contentResolver.openInputStream(sourceDoc.uri)!!.use { input ->
+            localCopy.outputStream().use { input.copyTo(it) }
+        }
+
+        backup(root, entry.relativePath, localCopy)
+
+        val compressor = compressorFor(entry.kind)
+        val result = compressor.compress(localCopy, settings.compressionMode, workDir)
+
+        // Keep the extension truthful to the actual bytes (e.g. photo.png -> photo.webp)
+        // so any app opening the file by extension still reads it correctly.
+        val newName = result.outputFile.name
+        if (newName != sourceDoc.name) sourceDoc.renameTo(newName)
+        replaceInPlace(sourceDoc, result.outputFile, entry.lastModified)
+
+        val newRelativePath = entry.relativePath.substringBeforeLast('/', "").let {
+            if (it.isEmpty()) newName else "$it/$newName"
+        }
+        dao.update(
+            entry.copy(
+                displayName = newName,
+                relativePath = newRelativePath,
+                uri = sourceDoc.uri.toString(),
+                decision = Decision.DONE,
+                compressedSizeBytes = result.outputFile.length(),
+                wasLossless = result.wasLossless,
+                reviewedAt = System.currentTimeMillis(),
+            ),
+        )
+
+        localCopy.delete()
+        if (result.outputFile != localCopy) result.outputFile.delete()
+    }
+
+    private fun backup(root: DocumentFile, relativePath: String, original: File) {
+        val backupDoc = ensureBackupPath(root, relativePath)
+        context.contentResolver.openOutputStream(backupDoc.uri, "wt")!!.use { out ->
+            original.inputStream().use { it.copyTo(out) }
+        }
+    }
+
+    private fun replaceInPlace(sourceDoc: DocumentFile, newContent: File, originalLastModified: Long) {
+        context.contentResolver.openOutputStream(sourceDoc.uri, "wt")!!.use { out ->
+            newContent.inputStream().use { it.copyTo(out) }
+        }
+        // Best-effort: SAF providers don't reliably support setLastModified; local storage does.
+        runCatching { File(sourceDoc.uri.path ?: return@runCatching).setLastModified(originalLastModified) }
+    }
+
+    private fun findByRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {
+        var current = root
+        for (segment in relativePath.split("/")) {
+            current = current.findFile(segment) ?: return null
+        }
+        return current
+    }
+
+    private fun ensureBackupPath(root: DocumentFile, relativePath: String): DocumentFile {
+        val segments = relativePath.split("/")
+        var dir = root.findFile(FolderScanner.BACKUP_DIR_NAME) ?: root.createDirectory(FolderScanner.BACKUP_DIR_NAME)!!
+        for (segment in segments.dropLast(1)) {
+            dir = dir.findFile(segment) ?: dir.createDirectory(segment)!!
+        }
+        val fileName = segments.last()
+        return dir.findFile(fileName) ?: dir.createFile("application/octet-stream", fileName)!!
+    }
+
+    private fun compressorFor(kind: FileKind): Compressor = when (kind) {
+        FileKind.PHOTO -> PhotoCompressor()
+        FileKind.VIDEO -> VideoCompressor(context)
+        FileKind.LIVE_PHOTO -> LivePhotoCompressor()
+        FileKind.PDF -> PdfCompressor(context)
+        FileKind.DOCUMENT -> ZipRecompressor()
+        FileKind.TEXT, FileKind.OTHER -> TextCompressor()
+    }
+}

@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "tinder-for-compression"
+rootProject.name = "media-compression-app"
 include(":app")

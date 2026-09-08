@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.sharma2464.tindercompression"
+    namespace = "com.sharma2464.mediacompression"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.sharma2464.tindercompression"
+        applicationId = "com.sharma2464.mediacompression"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

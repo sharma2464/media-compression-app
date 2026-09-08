@@ -12,17 +12,17 @@
         tools:ignore="ScopedStorage" />
 
     <application
-        android:name=".TinderCompressionApp"
+        android:name=".MediaCompressionApp"
         android:allowBackup="true"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="@string/app_name"
-        android:theme="@style/Theme.TinderCompression"
+        android:theme="@style/Theme.MediaCompression"
         android:supportsRtl="true">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.TinderCompression">
+            android:theme="@style/Theme.MediaCompression">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

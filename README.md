@@ -1,6 +1,6 @@
-# Tinder for Compression
+# Media Compression
 
-Swipe through your media library, Tinder-style, and decide what gets compressed:
+Swipe through your media library and decide what gets compressed:
 
 - **Swipe left** — don't compress, keep as-is
 - **Swipe right** — queue for compression

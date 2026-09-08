@@ -6,11 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +20,7 @@ import com.sharma2464.tindercompression.ui.FilePreview
 import com.sharma2464.tindercompression.ui.ReviewViewModel
 import com.sharma2464.tindercompression.ui.SwipeDirection
 import com.sharma2464.tindercompression.ui.SwipeScreen
+import com.sharma2464.tindercompression.ui.WelcomeScreen
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ReviewViewModel by viewModels()
@@ -40,10 +38,7 @@ class MainActivity : ComponentActivity() {
                     var detailsEntry by remember { mutableStateOf<FileEntry?>(null) }
 
                     if (!rootPicked) {
-                        Column {
-                            Text("Pick a folder to review")
-                            Button(onClick = { pickRoot.launch(null) }) { Text("Choose folder") }
-                        }
+                        WelcomeScreen(onChooseFolder = { pickRoot.launch(null) })
                     } else {
                         SwipeScreen(
                             entry = entry,
@@ -60,6 +55,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onShowDetails = { detailsEntry = it },
+                            onPickAnotherFolder = { pickRoot.launch(null) },
                         )
                     }
 

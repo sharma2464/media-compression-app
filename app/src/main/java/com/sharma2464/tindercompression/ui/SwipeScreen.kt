@@ -4,11 +4,15 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,7 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.sharma2464.tindercompression.data.FileEntry
 import kotlin.math.abs
 
@@ -39,11 +46,12 @@ fun SwipeScreen(
     preview: @Composable (FileEntry) -> Unit,
     onSwiped: (SwipeDirection) -> Unit,
     onShowDetails: (FileEntry) -> Unit,
+    onPickAnotherFolder: () -> Unit = {},
 ) {
     Scaffold { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             if (entry == null) {
-                Text("No files left to review")
+                EmptyQueueMessage(onPickAnotherFolder)
                 return@Box
             }
             var offset by remember(entry.id) { mutableStateOf(Offset.Zero) }
@@ -76,6 +84,30 @@ fun SwipeScreen(
                     preview(entry)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyQueueMessage(onPickAnotherFolder: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("🎉", fontSize = 56.sp)
+        Text(
+            "All caught up!",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            "There's nothing left to review in this folder. Swipe-up files come back once you've been through everything else.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+        OutlinedButton(onClick = onPickAnotherFolder, modifier = Modifier.padding(top = 12.dp)) {
+            Text("Review another folder")
         }
     }
 }

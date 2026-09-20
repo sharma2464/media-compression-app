@@ -12,7 +12,7 @@ import java.io.FileOutputStream
  * image library needed. EXIF is read from the original and reapplied to the output.
  */
 class PhotoCompressor : Compressor {
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File): CompressionResult {
+    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val exif = ExifInterface(input)
         val bitmap = BitmapFactory.decodeFile(input.path)
             ?: error("Could not decode image: ${input.path}")

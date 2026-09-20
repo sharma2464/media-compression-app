@@ -39,7 +39,7 @@ class CompressionForegroundService : Service() {
             context.startForegroundService(Intent(context, CompressionForegroundService::class.java))
         }
 
-        fun updateProgress(context: Context, current: Int, total: Int, fileName: String) {
+        fun updateNotification(context: Context, current: Int, total: Int, fileName: String) {
             val manager = context.getSystemService(android.app.NotificationManager::class.java)
             val notification = NotificationCompat.Builder(context, MediaCompressionApp.COMPRESSION_CHANNEL_ID)
                 .setContentTitle("Compressing files ($current/$total)")

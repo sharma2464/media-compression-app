@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.sharma2464.mediacompression.data.FileEntry
 import com.sharma2464.mediacompression.data.FileKind
@@ -25,10 +27,23 @@ fun FilePreview(entry: FileEntry, modifier: Modifier = DEFAULT_PREVIEW_MODIFIER)
  * (which has no DB row of its own) with the exact same widgets.
  */
 @Composable
-fun TypedPreview(uri: Uri, kind: FileKind, displayName: String, mimeType: String, modifier: Modifier = DEFAULT_PREVIEW_MODIFIER) {
+fun TypedPreview(
+    uri: Uri,
+    kind: FileKind,
+    displayName: String,
+    mimeType: String,
+    modifier: Modifier = DEFAULT_PREVIEW_MODIFIER,
+    showVideoControls: Boolean = true,
+    onVideoPlayerReady: (ExoPlayer) -> Unit = {},
+) {
     when (kind) {
-        FileKind.PHOTO, FileKind.LIVE_PHOTO -> AsyncImage(model = uri, contentDescription = displayName, modifier = modifier)
-        FileKind.VIDEO -> VideoPreview(uri, modifier)
+        FileKind.PHOTO, FileKind.LIVE_PHOTO -> AsyncImage(
+            model = uri,
+            contentDescription = displayName,
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+        )
+        FileKind.VIDEO -> VideoPreview(uri, modifier, showControls = showVideoControls, onPlayerReady = onVideoPlayerReady)
         FileKind.PDF -> PdfPreview(uri, modifier)
         FileKind.TEXT -> TextPreview(uri, modifier)
         FileKind.DOCUMENT, FileKind.OTHER -> Text("No inline preview for $mimeType", modifier = modifier)

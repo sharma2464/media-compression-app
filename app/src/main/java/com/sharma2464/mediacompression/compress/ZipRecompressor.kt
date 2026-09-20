@@ -13,7 +13,7 @@ import java.util.zip.ZipOutputStream
  * Lossy re-encoding doesn't apply here, so both modes behave the same.
  */
 class ZipRecompressor : Compressor {
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File): CompressionResult {
+    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val output = File(workDir, input.name)
         ZipFile(input).use { zip ->
             ZipOutputStream(output.outputStream()).use { out ->

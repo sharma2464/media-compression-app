@@ -20,7 +20,7 @@ import java.io.File
  * implemented yet — both still pass through unchanged. Tracked in issue #15.
  */
 class LivePhotoCompressor(private val context: Context) : Compressor {
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File): CompressionResult {
+    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val passthrough = { copyThrough(input, workDir) }
         if (mode == CompressionMode.LOSSLESS_ONLY) return passthrough()
 

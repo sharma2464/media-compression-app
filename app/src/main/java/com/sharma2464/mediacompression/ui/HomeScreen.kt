@@ -1,12 +1,5 @@
 package com.sharma2464.mediacompression.ui
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.text.format.Formatter
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,18 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.sharma2464.mediacompression.compress.CompressionForegroundService
-import com.sharma2464.mediacompression.data.AppDatabase
-import com.sharma2464.mediacompression.data.Decision
-import com.sharma2464.mediacompression.data.FileEntry
 import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.scan.BrowsableVolume
-import com.sharma2464.mediacompression.scan.guessMimeType
 import com.sharma2464.mediacompression.scan.listBrowsableVolumes
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.Button
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -74,7 +61,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val volumes = remember { listBrowsableVolumes(context) }
+    val volumes = remember(context) { listBrowsableVolumes(context) }
     val pagerState = rememberPagerState(pageCount = { volumes.size })
     val scope = rememberCoroutineScope()
 
@@ -97,6 +84,13 @@ fun HomeScreen(
         currentDir?.let {
             viewModel.loadDirectoryAt(it)
             viewModel.clearSelected()
+        }
+    }
+
+    LaunchedEffect(currentVolume?.label, currentVolume?.rootDir) {
+        val vol = currentVolume
+        if (vol != null) {
+            viewModel.setActiveVolume(vol.label, vol.rootDir)
         }
     }
 
@@ -246,18 +240,6 @@ fun HomeScreen(
                     }
                 }
 
-                if (selected.isNotEmpty()) {
-                    SelectionBar(
-                        context = context,
-                        selected = selected,
-                        onCompress = { selected ->
-                            scope.launch {
-                                compressSelected(context, selected)
-                                viewModel.clearSelected()
-                            }
-                        },
-                    )
-                }
             }
         }
     }
@@ -310,6 +292,7 @@ private fun BrowserRow(
             modifier = Modifier
                 .size(22.dp)
                 .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
+                .testTag("select_${entry.name}")
                 .clickable { onToggleSelect() },
             contentAlignment = Alignment.Center,
         ) {
@@ -336,92 +319,3 @@ private fun kindIcon(kind: FileKind?): String = when (kind) {
     null -> "📄"
 }
 
-@Composable
-private fun SelectionBar(
-    context: Context,
-    selected: Set<File>,
-    onCompress: (Set<File>) -> Unit,
-) {
-    val totalSize = remember(selected) {
-        selected.fold(0L) { acc, file ->
-            acc + (if (file.isDirectory) {
-                file.walk().filter { it.isFile }.sumOf { it.length() }
-            } else {
-                file.length()
-            })
-        }
-    }
-    val totalSizeStr = Formatter.formatShortFileSize(context, totalSize)
-
-    val shareIntent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(12.dp),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Selected: ${selected.size} items, $totalSizeStr", style = MaterialTheme.typography.labelMedium)
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = {
-                        val uris = selected.map { Uri.fromFile(it) }.toTypedArray()
-                        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                            type = "*/*"
-                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris.toList()))
-                        }
-                        shareIntent.launch(Intent.createChooser(intent, "Share files"))
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Share")
-                }
-                Button(
-                    onClick = { onCompress(selected) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Compress")
-                }
-            }
-        }
-    }
-}
-
-private suspend fun compressSelected(context: Context, selected: Set<File>) {
-    val db = AppDatabase.get(context)
-    val dao = db.fileEntryDao()
-    val entries = mutableListOf<FileEntry>()
-
-    selected.forEach { file ->
-        if (file.isDirectory) {
-            file.walk().filter { it.isFile }.forEach { f ->
-                entries += makeFileEntry(f)
-            }
-        } else {
-            entries += makeFileEntry(file)
-        }
-    }
-
-    dao.insertAll(entries)
-    CompressionForegroundService.start(context)
-}
-
-private fun makeFileEntry(file: File): FileEntry {
-    val mime = guessMimeType(file.name)
-    val kind = com.sharma2464.mediacompression.scan.classifyFile(mime)
-    return FileEntry(
-        uri = Uri.fromFile(file).toString(),
-        relativePath = file.absolutePath,
-        displayName = file.name,
-        mimeType = mime,
-        kind = kind,
-        sizeBytes = file.length(),
-        lastModified = file.lastModified(),
-        decision = Decision.COMPRESS,
-    )
-}

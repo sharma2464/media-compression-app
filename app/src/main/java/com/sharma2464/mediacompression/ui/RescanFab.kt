@@ -2,7 +2,7 @@ package com.sharma2464.mediacompression.ui
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SmallFloatingActionButton
@@ -21,7 +21,7 @@ fun RescanFab(
         if (isScanning) {
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
         } else {
-            Icon(Icons.Default.Refresh, contentDescription = "Rescan this folder")
+            Icon(Icons.Outlined.AutoAwesome, contentDescription = "Rescan this folder")
         }
     }
 }

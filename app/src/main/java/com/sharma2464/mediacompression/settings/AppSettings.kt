@@ -41,6 +41,9 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_DESTINATION_URI, null)
         set(value) = prefs.edit { putString(KEY_DESTINATION_URI, value) }
 
+    /** Per-batch override from compress preview; not persisted. */
+    var sessionDestinationTreeUri: String? = null
+
     var compressionMode: CompressionMode
         get() = CompressionMode.valueOf(
             prefs.getString(KEY_MODE, CompressionMode.ADAPTIVE.name) ?: CompressionMode.ADAPTIVE.name,

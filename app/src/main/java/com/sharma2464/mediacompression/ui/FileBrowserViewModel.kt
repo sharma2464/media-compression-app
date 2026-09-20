@@ -33,6 +33,8 @@ data class BrowserEntry(
 
 enum class SortField { DATE_TAKEN, DATE_MODIFIED, SIZE, NAME, TYPE }
 
+enum class BackAction { ClearSelection, NavigatedUp, GoToHomeTab, None }
+
 sealed class BrowserLoadState {
     data object Idle : BrowserLoadState()
     data class Loading(val directoryName: String, val message: String) : BrowserLoadState()
@@ -70,6 +72,12 @@ class FileBrowserViewModel(context: Context) : ViewModel() {
 
     private var allEntries: List<BrowserEntry> = emptyList()
     private var activeDirectory: File? = null
+
+    private val _activeVolumeLabel = MutableStateFlow<String?>(null)
+    val activeVolumeLabel: StateFlow<String?> = _activeVolumeLabel
+
+    private val _activeVolumeRoot = MutableStateFlow<File?>(null)
+    val activeVolumeRoot: StateFlow<File?> = _activeVolumeRoot
 
     val isScanning: Boolean
         get() = _loadState.value is BrowserLoadState.Scanning
@@ -261,6 +269,53 @@ class FileBrowserViewModel(context: Context) : ViewModel() {
         if (current == volumeRootDir) return
         val parent = current.parentFile ?: volumeRootDir
         navigateInto(parent, volumeLabel)
+    }
+
+    fun setActiveVolume(volumeLabel: String, volumeRootDir: File) {
+        _activeVolumeLabel.value = volumeLabel
+        _activeVolumeRoot.value = volumeRootDir
+    }
+
+    fun openAtVolumePath(volumeLabel: String, volumeRoot: File, dir: File) {
+        setActiveVolume(volumeLabel, volumeRoot)
+        val updated = _currentPath.value.toMutableMap()
+        updated[volumeLabel] = dir
+        _currentPath.value = updated
+        loadDirectoryAt(dir)
+    }
+
+    fun isAtVolumeRoot(): Boolean {
+        val label = _activeVolumeLabel.value ?: return true
+        val root = _activeVolumeRoot.value ?: return true
+        val current = _currentPath.value[label] ?: root
+        return current == root
+    }
+
+    /** First back action for the Files tab when selection is already empty. */
+    fun handleFilesTabBack(): BackAction {
+        if (_selected.value.isNotEmpty()) return BackAction.ClearSelection
+        if (!isAtVolumeRoot()) {
+            val label = _activeVolumeLabel.value
+            val root = _activeVolumeRoot.value
+            if (label != null && root != null) navigateUp(label, root)
+            return BackAction.NavigatedUp
+        }
+        return BackAction.None
+    }
+
+    fun deleteSelected() {
+        val toDelete = _selected.value.toList()
+        if (toDelete.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            toDelete.forEach { file ->
+                if (file.isDirectory) file.deleteRecursively() else file.delete()
+            }
+            _selected.value = emptySet()
+            val dir = activeDirectory
+            if (dir != null) {
+                loadDirectory(dir, forceRescan = true)
+            }
+        }
     }
 
     fun setSortField(field: SortField) {

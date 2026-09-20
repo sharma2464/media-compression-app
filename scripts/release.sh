@@ -11,6 +11,14 @@ APK_NAME="media-compression-${VERSION_NAME}.apk"
 echo "==> Unit tests"
 ./gradlew testDebugUnitTest
 
+if command -v adb >/dev/null && adb devices | grep -qE 'device$'; then
+  echo "==> Instrumented + E2E tests (device connected)"
+  ./scripts/run-device-tests.sh
+else
+  echo "WARN: No adb device — skipping instrumented/E2E tests. Connect a device before release."
+  exit 1
+fi
+
 echo "==> Assemble debug APK (release artifact for this repo)"
 ./gradlew assembleDebug
 

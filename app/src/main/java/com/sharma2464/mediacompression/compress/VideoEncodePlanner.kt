@@ -130,27 +130,33 @@ object VideoEncodePlanner {
             return ((minBr * sec + audioBits) / 8f) / (1024f * 1024f)
         }
 
+        var shortSide = VideoDimensions.shortSideForOutputHeight(originalWidth, originalHeight, outputHeight)
         var attempts = 0
-        while (minMb(outputHeight, fps, audio) > targetMb && attempts++ < 20) {
+        while (minMb(outputHeight, fps, audio) > targetMb && attempts++ < 24) {
             if (!removeAudio && audio > 128_000) {
                 audio = 128_000
+                continue
+            }
+            if (!removeAudio && audio > 96_000 && minMb(outputHeight, fps, audio) > targetMb * 1.5f) {
+                audio = 96_000
                 continue
             }
             if (fps > 30) {
                 fps = 30
                 continue
             }
-            val shortSide = VideoDimensions.shortSideForOutputHeight(originalWidth, originalHeight, outputHeight)
             val newShort = when {
                 shortSide > 2160 -> 2160
                 shortSide > 1080 -> 1080
                 shortSide > 720 -> 720
                 shortSide > 480 -> 480
-                else -> 360
+                shortSide > 360 -> 360
+                shortSide > 240 -> 240
+                else -> shortSide
             }
-            val newHeight = VideoDimensions.outputHeightForShortSide(originalWidth, originalHeight, newShort)
-            if (newHeight < outputHeight) {
-                outputHeight = newHeight
+            if (newShort < shortSide) {
+                shortSide = newShort
+                outputHeight = VideoDimensions.outputHeightForShortSide(originalWidth, originalHeight, shortSide)
                 continue
             }
             if (fps > 24) {
@@ -195,6 +201,14 @@ object VideoEncodePlanner {
         val codec = if (videoMime == MimeTypes.VIDEO_H265) VideoCodec.H265 else VideoCodec.H264
         val minBr = minVideoBitrateBps(outputHeight, outputFps, codec)
         val cap = if (originalBitrate > 0) originalBitrate.toLong() else Long.MAX_VALUE
-        return calculated.coerceIn(minBr, cap).toInt()
+        val sec = durationSec.toFloat()
+        val minMb = if (sec > 0) {
+            val audioBits = if (removeAudio) 0f else audioBps.toFloat() * sec
+            ((minBr * sec + audioBits) / 8f) / (1024f * 1024f)
+        } else {
+            0f
+        }
+        val floor = if (targetMb > 0f && targetMb < minMb) 80_000L else minBr
+        return calculated.coerceIn(floor, cap).toInt()
     }
 }

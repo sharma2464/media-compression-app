@@ -27,4 +27,17 @@ class CompressSettingsMapperTest {
         val label = CompressSettingsMapper.summaryLabel(CompressJobSettings.DEFAULT)
         assertTrue(label.contains("Medium"))
     }
+
+    @Test
+    fun low_target_size_mb_lowers_photo_quality() {
+        val job = CompressJobSettings(qualitySlider = 50, targetSizeMb = 1f)
+        val profile = CompressSettingsMapper.toProfile(
+            CompressionMode.ADAPTIVE,
+            job,
+            null,
+            java.io.File("/fake/photo.jpg"),
+        )
+        assertTrue(profile.photoWebpQuality <= 55)
+        assertTrue(profile.maxPhotoLongEdge != null)
+    }
 }

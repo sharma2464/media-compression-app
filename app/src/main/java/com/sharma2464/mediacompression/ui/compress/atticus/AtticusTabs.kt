@@ -55,7 +55,7 @@ import com.sharma2464.mediacompression.compress.CompressFlowActions
 import com.sharma2464.mediacompression.compress.CompressFlowUiState
 import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.PresetTier
-import com.sharma2464.mediacompression.compress.defaultCompressTargetSizePresets
+import com.sharma2464.mediacompression.settings.TargetSizePreset
 import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.min
@@ -67,6 +67,8 @@ fun AtticusPresetsTab(
     ui: CompressFlowUiState,
     settings: CompressJobSettings,
     actions: CompressFlowActions,
+    showTargetSizeChips: Boolean = true,
+    targetSizePresets: List<TargetSizePreset> = TargetSizePreset.defaults,
 ) {
     val scrollState = rememberScrollState()
     val haptics = LocalHapticFeedback.current
@@ -129,8 +131,8 @@ fun AtticusPresetsTab(
         }
         Spacer(Modifier.height(24.dp))
         val originalMb = ui.originalSize / (1024f * 1024f)
-        val sizePresets = defaultCompressTargetSizePresets.filter { it.sizeMb < originalMb || originalMb <= 0f }
-        if (sizePresets.isNotEmpty()) {
+        val sizePresets = targetSizePresets.filter { it.sizeMb < originalMb || originalMb <= 0f }
+        if (showTargetSizeChips && sizePresets.isNotEmpty()) {
             Text("Target size limits", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 sizePresets.forEach { preset ->

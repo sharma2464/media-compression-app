@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MimeTypes
 import com.sharma2464.mediacompression.compress.CompressFlowActions
+import com.sharma2464.mediacompression.compress.initialCompressTargetMb
 import com.sharma2464.mediacompression.compress.CompressFlowUiState
 import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.CompressSettingsEstimator
@@ -55,7 +56,6 @@ fun CompressFlowPreview(
 ) {
     val context = LocalContext.current
     val settings = remember { AppSettings(context) }
-    var jobSettings by remember { mutableStateOf(CompressJobSettings.DEFAULT) }
     var destinationPath by remember(state) { mutableStateOf(state.destinationPath) }
     var outputMenuExpanded by remember { mutableStateOf(false) }
 
@@ -63,21 +63,43 @@ fun CompressFlowPreview(
     val primaryVideo = remember(state.items) {
         state.items.firstOrNull { it.kind == FileKind.VIDEO }?.file
     }
-    val videoMeta = remember(primaryVideo) { primaryVideo?.let { VideoMetadataProbe.probe(it) } }
+    val primaryPhoto = remember(state.items) {
+        state.items.firstOrNull {
+            it.kind == FileKind.PHOTO || it.kind == FileKind.LIVE_PHOTO
+        }?.file
+    }
     val hasVideo = state.items.any { it.kind == FileKind.VIDEO }
+    val sizingBytes = remember(state, primaryVideo, primaryPhoto) {
+        primaryVideo?.length() ?: primaryPhoto?.length() ?: state.totalBytes
+    }
+    var jobSettings by remember(state.items, sizingBytes, hasVideo) {
+        val sizeMb = sizingBytes / (1024f * 1024f).coerceAtLeast(0.01f)
+        val ratio = if (hasVideo) {
+            settings.defaultVideoConfig.defaultSizeRatio
+        } else {
+            0.4f
+        }
+        mutableStateOf(
+            CompressJobSettings.DEFAULT.copy(
+                targetSizeMb = initialCompressTargetMb(sizingBytes, hasVideo, ratio),
+            ),
+        )
+    }
+    val videoMeta = remember(primaryVideo) { primaryVideo?.let { VideoMetadataProbe.probe(it) } }
     val lossless = settings.compressionMode == CompressionMode.LOSSLESS_ONLY
-    val estimated = remember(pairs, jobSettings, lossless, primaryVideo) {
+    val estimated = remember(pairs, jobSettings, lossless, primaryVideo, primaryPhoto) {
         CompressSettingsEstimator.estimatedBytesAfter(
             pairs,
             settings.compressionMode,
             jobSettings,
             primaryVideo,
+            primaryPhoto,
         )
     }
-    val uiState = remember(state, jobSettings, videoMeta, primaryVideo, estimated) {
+    val uiState = remember(state, jobSettings, videoMeta, primaryVideo, estimated, settings.showBitrate) {
         CompressFlowUiState.build(
             context = context,
-            previewTotalBytes = state.totalBytes,
+            previewTotalBytes = sizingBytes,
             fileCount = state.items.size,
             batchLabel = state.locationPath,
             settings = jobSettings,
@@ -85,10 +107,13 @@ fun CompressFlowPreview(
             videoFile = primaryVideo,
             estimatedBytes = estimated,
             supportedCodecs = listOf(MimeTypes.VIDEO_H265, MimeTypes.VIDEO_H264),
+            showBitrate = settings.showBitrate,
         )
     }
-    val actions = remember(videoMeta) {
+    val actions = remember(videoMeta, sizingBytes) {
         CompressFlowActions(
+            appSettings = settings,
+            originalSizeBytes = sizingBytes,
             current = { jobSettings },
             onChange = { jobSettings = it },
             meta = videoMeta,

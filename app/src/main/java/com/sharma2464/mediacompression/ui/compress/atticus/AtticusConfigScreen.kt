@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.sharma2464.mediacompression.compress.CompressFlowActions
 import com.sharma2464.mediacompression.compress.CompressFlowUiState
 import com.sharma2464.mediacompression.compress.CompressJobSettings
+import com.sharma2464.mediacompression.settings.AppSettings
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -69,6 +70,8 @@ fun AtticusConfigScreen(
     onStart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appSettings = remember(context) { AppSettings(context) }
     val pageCount = if (hasVideo) 3 else 1
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = rememberCoroutineScope()
@@ -119,8 +122,20 @@ fun AtticusConfigScreen(
                 }
                 HorizontalPager(state = pagerState, modifier = Modifier.weight(1f), userScrollEnabled = hasVideo) { page ->
                     when (page) {
-                        0 -> AtticusPresetsTab(ui, settings, actions)
-                        1 -> if (hasVideo) AtticusVideoOptionsTab(ui, settings, actions) else AtticusPresetsTab(ui, settings, actions)
+                        0 -> AtticusPresetsTab(
+                            ui,
+                            settings,
+                            actions,
+                            showTargetSizeChips = appSettings.showTargetSizePresets,
+                            targetSizePresets = appSettings.targetSizePresets,
+                        )
+                        1 -> if (hasVideo) AtticusVideoOptionsTab(ui, settings, actions) else AtticusPresetsTab(
+                            ui,
+                            settings,
+                            actions,
+                            showTargetSizeChips = appSettings.showTargetSizePresets,
+                            targetSizePresets = appSettings.targetSizePresets,
+                        )
                         else -> AtticusAudioOptionsTab(ui, settings, actions)
                     }
                 }

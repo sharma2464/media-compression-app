@@ -21,9 +21,9 @@ class CompressionBatchDialogUiTest {
     fun previewStage_shows_summary_and_start() {
         val preview = CompressPreviewState(
             items = listOf(
-                CompressPreviewItem(File("/sdcard/largest_files/v.mp4"), "v.mp4", null, 1000L),
+                CompressPreviewItem(File("/sdcard/largest_files/v.mp4"), "v.mp4", null, 50_000_000L),
             ),
-            totalBytes = 1000L,
+            totalBytes = 50_000_000L,
             locationPath = "/sdcard/largest_files",
             destinationPath = "/sdcard/largest_files/COMPRESSED",
             estimatedAfterBytes = 550L,
@@ -56,12 +56,12 @@ class CompressionBatchDialogUiTest {
         var started = false
         val preview = CompressPreviewState(
             items = listOf(
-                CompressPreviewItem(File("/sdcard/x.mp4"), "x.mp4", null, 1L),
+                CompressPreviewItem(File("/sdcard/x.mp4"), "x.mp4", null, 50_000_000L),
             ),
-            totalBytes = 1L,
+            totalBytes = 50_000_000L,
             locationPath = "/sdcard",
             destinationPath = "/sdcard/COMPRESSED",
-            estimatedAfterBytes = 1L,
+            estimatedAfterBytes = 25_000_000L,
             modeLabel = "Adaptive",
             storageLabel = "Compressed copy",
             selectedRoots = setOf(File("/sdcard/x.mp4")),

@@ -25,6 +25,16 @@ Edit `app/build.gradle.kts` before releasing:
 
 Tag must match: `v{versionName}` (e.g. `v0.3.1`).
 
+## Test gate (required)
+
+With a device connected (`adb devices`):
+
+```bash
+./scripts/run-device-tests.sh
+```
+
+This runs JVM unit tests, instrumented tests (excluding `@LargeTest`), then large/E2E tests.
+
 ## Steps
 
 From the repository root:
@@ -32,6 +42,8 @@ From the repository root:
 ```bash
 ./scripts/release.sh
 ```
+
+`release.sh` runs unit tests and **requires** a connected device for instrumented + E2E tests before building the APK.
 
 Or manually:
 

@@ -45,7 +45,7 @@ import com.sharma2464.mediacompression.compress.CompressionStatus
 import com.sharma2464.mediacompression.scan.compressibleFilesInSelection
 import com.sharma2464.mediacompression.scan.hasFullStorageAccess
 import com.sharma2464.mediacompression.settings.AppSettings
-import com.sharma2464.mediacompression.settings.SettingsScreen
+import com.sharma2464.mediacompression.settings.atticus.AtticusSettingsHost
 import com.sharma2464.mediacompression.ui.BrowserLoadState
 import com.sharma2464.mediacompression.ui.CompressDialogStage
 import com.sharma2464.mediacompression.ui.CompressionBatchDialog
@@ -222,7 +222,7 @@ class MainActivity : ComponentActivity() {
                                         viewModel = fileBrowserViewModel,
                                         modifier = Modifier.fillMaxSize(),
                                     )
-                                    Tab.SETTINGS -> SettingsScreen(
+                                    Tab.SETTINGS -> AtticusSettingsHost(
                                         onThemeModeChange = { themeMode = it },
                                     )
                                 }

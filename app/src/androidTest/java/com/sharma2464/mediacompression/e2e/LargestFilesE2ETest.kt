@@ -74,7 +74,8 @@ class LargestFilesE2ETest {
 
         composeRule.onNodeWithTag("select_$SMALLEST_VIDEO").performClick()
         composeRule.onNodeWithTag("selection_compress").performClick()
-        composeRule.onNodeWithText("Compress files").assertIsDisplayed()
+        composeRule.onNodeWithTag("compress_hero").assertIsDisplayed()
+        composeRule.onNodeWithTag("compress_start").assertIsDisplayed()
         composeRule.onNodeWithTag("compress_start").performClick()
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
@@ -83,12 +84,6 @@ class LargestFilesE2ETest {
             }.getOrDefault(false)
         }
         composeRule.onNodeWithText("Compressing files").assertIsDisplayed()
-        composeRule.waitUntil(timeoutMillis = 60_000) {
-            runCatching {
-                composeRule.onNodeWithText("Total files:", substring = true).assertExists()
-                true
-            }.getOrDefault(false)
-        }
 
         composeRule.waitUntil(timeoutMillis = 120_000) {
             runCatching {
@@ -98,8 +93,13 @@ class LargestFilesE2ETest {
         }
 
         composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithText("Double tap to cancel").performClick()
-        composeRule.onNodeWithText("Tap again to cancel").performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                composeRule.onNodeWithText("Tap Cancel again", substring = true).assertExists()
+                true
+            }.getOrDefault(false)
+        }
+        composeRule.onNodeWithText("Cancel").performClick()
     }
 
     companion object {

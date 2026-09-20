@@ -23,4 +23,26 @@ class VideoEncodePlannerTest {
         assertTrue(planned.outputVideoHeight == 0 || planned.outputVideoHeight <= 2160)
         assertTrue(planned.outputFps == null || planned.outputFps == 30)
     }
+
+    @Test
+    fun long_4k_clip_can_target_140mb() {
+        val durationMs = 20 * 60 * 1000L
+        val meta = VideoMetadata(3840, 2160, durationMs, 20_000_000, 30f)
+        val settings = CompressJobSettings(
+            targetSizeMb = 140f,
+            videoCodec = VideoCodec.H265,
+            resolution = ResolutionChoice.ORIGINAL,
+        )
+        val planned = VideoEncodePlanner.planWithDuration(
+            file = java.io.File("/nonexistent"),
+            settings = settings,
+            videoMeta = meta,
+            targetBytes = (140L * 1024 * 1024),
+        )
+        assertTrue(
+            "bitrate=${planned.videoBitrateBps} height=${planned.outputVideoHeight}",
+            planned.videoBitrateBps < 1_200_000,
+        )
+        assertTrue(planned.outputVideoHeight > 0 && planned.outputVideoHeight <= 2160)
+    }
 }

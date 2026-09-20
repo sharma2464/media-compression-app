@@ -1,39 +1,70 @@
 package com.sharma2464.mediacompression.compress
 
 import androidx.media3.common.MimeTypes
+import com.sharma2464.mediacompression.settings.AppSettings
+import com.sharma2464.mediacompression.settings.QualityPresetConfig
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 class CompressFlowActions(
+    private val appSettings: AppSettings,
+    private val originalSizeBytes: Long,
     private val current: () -> CompressJobSettings,
     private val onChange: (CompressJobSettings) -> Unit,
     private val meta: VideoMetadata?,
 ) {
+    private val originalMb: Float
+        get() = originalSizeBytes / (1024f * 1024f).coerceAtLeast(0.01f)
+
     fun applyPreset(tier: PresetTier) {
+        val config = appSettings.qualityPresetFor(tier)
+        val targetMb = (originalMb * config.sizeRatio).coerceAtLeast(0.1f)
         val slider = when (tier) {
             PresetTier.HIGH -> 75
             PresetTier.MEDIUM -> 50
             PresetTier.LOW -> 25
         }
-        onChange(
-            current().copy(
-                presetTier = tier,
-                qualitySlider = slider,
-                targetSizeMb = when (tier) {
-                    PresetTier.HIGH -> 50f
-                    PresetTier.MEDIUM -> 20f
-                    PresetTier.LOW -> 10f
-                },
-            ),
+        var next = current().copy(
+            presetTier = tier,
+            qualitySlider = slider,
+            targetSizeMb = targetMb,
+            platformTarget = null,
+            removeAudio = false,
+            audioBitrateKbps = if (config.audioBitrate > 0) config.audioBitrate / 1000 else null,
         )
+        if (meta != null && config.resolutionShortSide > 0) {
+            val m = meta
+            val originalShort = min(m.width, m.height)
+            if (config.resolutionShortSide < originalShort) {
+                next = next.copy(
+                    resolution = when {
+                        config.resolutionShortSide >= 1080 -> ResolutionChoice.P1080
+                        config.resolutionShortSide >= 720 -> ResolutionChoice.P720
+                        config.resolutionShortSide >= 480 -> ResolutionChoice.P480
+                        else -> ResolutionChoice.QUARTER
+                    },
+                )
+            }
+        }
+        if (meta != null && config.targetFps > 0) {
+            next = next.copy(
+                frameRate = when (config.targetFps) {
+                    60 -> FrameRateChoice.FPS_60
+                    30 -> FrameRateChoice.FPS_30
+                    24 -> FrameRateChoice.FPS_24
+                    else -> FrameRateChoice.ORIGINAL
+                },
+            )
+        }
+        onChange(next)
     }
 
     fun setTargetSize(mb: Float) {
-        onChange(current().copy(targetSizeMb = mb, platformTarget = null))
+        onChange(current().copy(targetSizeMb = mb.coerceAtLeast(0.1f), platformTarget = null))
     }
 
     fun setTargetSizePreview(mb: Float) {
-        onChange(current().copy(targetSizeMb = mb))
+        onChange(current().copy(targetSizeMb = mb.coerceAtLeast(0.1f)))
     }
 
     fun setVideoCodec(mime: String) {

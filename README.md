@@ -34,20 +34,17 @@ the **debug-signed** APK from `assembleDebug` for sideloading.
 Published on [GitHub Releases](https://github.com/sharma2464/media-compression-app/releases)
 as `media-compression-{version}.apk`.
 
-**Maintainers — local release** (also documented in `.cursor/skills/release/SKILL.md`):
+**Before every release** (device connected via `adb`):
+
+```bash
+./scripts/run-device-tests.sh   # unit + instrumented + @LargeTest E2E
+```
+
+**Ship** (also `.cursor/skills/release/SKILL.md`):
 
 1. Bump `versionName` / `versionCode` in `app/build.gradle.kts`.
 2. Commit and push `main`.
-3. Run:
-
-```bash
-chmod +x scripts/release.sh   # once
-./scripts/release.sh
-```
-
-This runs tests, builds the APK into `release-out/`, and creates the GitHub release
-with `gh`. CI workflow `.github/workflows/release.yml` does the same on push to `main`
-when Actions runners are available.
+3. `./scripts/release.sh` — runs the test gate, builds the APK, and creates the GitHub release with `gh`.
 
 ## Known limitations
 

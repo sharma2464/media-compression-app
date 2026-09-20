@@ -79,6 +79,7 @@ data class CompressFlowUiState(
             videoFile: java.io.File?,
             estimatedBytes: Long,
             supportedCodecs: List<String>,
+            showBitrate: Boolean = false,
         ): CompressFlowUiState {
             val w = meta?.width ?: 0
             val h = meta?.height ?: 0

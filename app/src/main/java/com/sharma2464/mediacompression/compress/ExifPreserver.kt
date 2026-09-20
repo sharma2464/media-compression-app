@@ -19,10 +19,23 @@ object ExifPreserver {
             .distinct()
     }
 
+    private val criticalTags = listOf(
+        ExifInterface.TAG_DATETIME,
+        ExifInterface.TAG_DATETIME_ORIGINAL,
+        ExifInterface.TAG_DATETIME_DIGITIZED,
+        ExifInterface.TAG_ARTIST,
+        ExifInterface.TAG_MAKE,
+        ExifInterface.TAG_MODEL,
+        ExifInterface.TAG_LENS_MODEL,
+        ExifInterface.TAG_FOCAL_LENGTH,
+        ExifInterface.TAG_ORIENTATION,
+    )
+
     fun copy(source: File, dest: File) {
-        val src = ExifInterface(source)
-        val dst = ExifInterface(dest)
-        for (tag in allTagNames) {
+        val src = ExifInterface(source.absolutePath)
+        val dst = ExifInterface(dest.absolutePath)
+        val tags = (criticalTags + allTagNames).distinct()
+        for (tag in tags) {
             src.getAttribute(tag)?.let { dst.setAttribute(tag, it) }
         }
         dst.saveAttributes()

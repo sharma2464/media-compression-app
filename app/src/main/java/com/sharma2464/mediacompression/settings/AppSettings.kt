@@ -79,6 +79,80 @@ class AppSettings(context: Context) {
             ?: ThemeMode.SYSTEM
         set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
 
+    var showBitrate: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_BITRATE, false)
+        set(value) = prefs.edit { putBoolean(KEY_SHOW_BITRATE, value) }
+
+    var useMbpsForBitrate: Boolean
+        get() = prefs.getBoolean(KEY_USE_MBPS, true)
+        set(value) = prefs.edit { putBoolean(KEY_USE_MBPS, value) }
+
+    var showTargetSizePresets: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_TARGET_SIZE_PRESET, true)
+        set(value) = prefs.edit { putBoolean(KEY_SHOW_TARGET_SIZE_PRESET, value) }
+
+    var highQualityPreset: QualityPresetConfig
+        get() = prefs.getString(KEY_PRESET_HIGH, null)?.let { QualityPresetConfig.fromJson(it) }
+            ?: QualityPresetConfig.defaultHigh
+        set(value) = prefs.edit { putString(KEY_PRESET_HIGH, value.toJson().toString()) }
+
+    var mediumQualityPreset: QualityPresetConfig
+        get() = prefs.getString(KEY_PRESET_MEDIUM, null)?.let { QualityPresetConfig.fromJson(it) }
+            ?: QualityPresetConfig.defaultMedium
+        set(value) = prefs.edit { putString(KEY_PRESET_MEDIUM, value.toJson().toString()) }
+
+    var lowQualityPreset: QualityPresetConfig
+        get() = prefs.getString(KEY_PRESET_LOW, null)?.let { QualityPresetConfig.fromJson(it) }
+            ?: QualityPresetConfig.defaultLow
+        set(value) = prefs.edit { putString(KEY_PRESET_LOW, value.toJson().toString()) }
+
+    var targetSizePresets: List<TargetSizePreset>
+        get() = decodeTargetSizePresets(prefs.getString(KEY_TARGET_SIZE_PRESETS, null))
+        set(value) = prefs.edit { putString(KEY_TARGET_SIZE_PRESETS, encodeTargetSizePresets(value)) }
+
+    var defaultVideoConfig: DefaultVideoConfig
+        get() = DefaultVideoConfig.fromJson(prefs.getString(KEY_DEFAULT_VIDEO, null))
+        set(value) = prefs.edit { putString(KEY_DEFAULT_VIDEO, value.toJson().toString()) }
+
+    var defaultAudioConfig: DefaultAudioConfig
+        get() = DefaultAudioConfig.fromJson(prefs.getString(KEY_DEFAULT_AUDIO, null))
+        set(value) = prefs.edit { putString(KEY_DEFAULT_AUDIO, value.toJson().toString()) }
+
+    var allCodecsUnlocked: Boolean
+        get() = prefs.getBoolean(KEY_ALL_CODECS_UNLOCKED, false)
+        set(value) = prefs.edit { putBoolean(KEY_ALL_CODECS_UNLOCKED, value) }
+
+    var allCodecsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ALL_CODECS_ENABLED, false)
+        set(value) = prefs.edit { putBoolean(KEY_ALL_CODECS_ENABLED, value) }
+
+    fun qualityPresetFor(tier: com.sharma2464.mediacompression.compress.PresetTier): QualityPresetConfig =
+        when (tier) {
+            com.sharma2464.mediacompression.compress.PresetTier.HIGH -> highQualityPreset
+            com.sharma2464.mediacompression.compress.PresetTier.MEDIUM -> mediumQualityPreset
+            com.sharma2464.mediacompression.compress.PresetTier.LOW -> lowQualityPreset
+        }
+
+    fun resetQualityPresets() {
+        highQualityPreset = QualityPresetConfig.defaultHigh
+        mediumQualityPreset = QualityPresetConfig.defaultMedium
+        lowQualityPreset = QualityPresetConfig.defaultLow
+    }
+
+    fun resetTargetSizePresets() {
+        targetSizePresets = TargetSizePreset.defaults
+    }
+
+    fun enableAllCodecsFeature() {
+        allCodecsUnlocked = true
+        allCodecsEnabled = true
+    }
+
+    fun disableAllCodecsFeature() {
+        allCodecsUnlocked = false
+        allCodecsEnabled = false
+    }
+
     companion object {
         private const val KEY_ROOT_URI = "root_tree_uri"
         private const val KEY_DESTINATION_URI = "destination_tree_uri"
@@ -87,5 +161,16 @@ class AppSettings(context: Context) {
         private const val KEY_STORAGE_MODE = "storage_mode"
         private const val KEY_ENABLED_KINDS = "enabled_kinds"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_SHOW_BITRATE = "show_bitrate"
+        private const val KEY_USE_MBPS = "use_mbps"
+        private const val KEY_SHOW_TARGET_SIZE_PRESET = "show_target_size_preset"
+        private const val KEY_PRESET_HIGH = "preset_high"
+        private const val KEY_PRESET_MEDIUM = "preset_medium"
+        private const val KEY_PRESET_LOW = "preset_low"
+        private const val KEY_TARGET_SIZE_PRESETS = "target_size_presets"
+        private const val KEY_DEFAULT_VIDEO = "default_video_config"
+        private const val KEY_DEFAULT_AUDIO = "default_audio_config"
+        private const val KEY_ALL_CODECS_UNLOCKED = "all_codecs_unlocked"
+        private const val KEY_ALL_CODECS_ENABLED = "all_codecs_enabled"
     }
 }

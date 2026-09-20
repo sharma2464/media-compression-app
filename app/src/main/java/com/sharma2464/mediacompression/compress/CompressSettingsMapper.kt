@@ -67,6 +67,12 @@ object CompressSettingsMapper {
             bitrateFactor = minOf(bitrateFactor, maxVideoBps / sourceBr)
         }
 
+        val photoPlan = if (videoMeta == null && videoFile != null && settings.targetSizeMb > 0f) {
+            PhotoEncodePlanner.plan(videoFile, settings)
+        } else {
+            null
+        }
+
         val strength = when {
             bitrateFactor <= 0.2 -> CompressionStrength.SMALL
             bitrateFactor <= 0.35 -> CompressionStrength.BALANCED
@@ -102,7 +108,8 @@ object CompressSettingsMapper {
             videoBitrateFactor = bitrateFactor,
             audioBitrateBps = if (settings.removeAudio) 0 else audioBps.coerceAtLeast(32_000),
             maxVideoLongEdge = maxEdge,
-            photoWebpQuality = photoQuality(settings),
+            photoWebpQuality = photoPlan?.webpQuality ?: photoQuality(settings),
+            maxPhotoLongEdge = photoPlan?.maxLongEdge,
             videoCodec = videoCodec,
             removeAudio = settings.removeAudio,
             volumePercent = settings.volumePercent.coerceIn(0, 100),

@@ -29,7 +29,7 @@ class CompressFlowActions(
     }
 
     fun setTargetSize(mb: Float) {
-        onChange(current().copy(targetSizeMb = mb, platformTarget = platformPresetForTargetMb(mb)))
+        onChange(current().copy(targetSizeMb = mb, platformTarget = null))
     }
 
     fun setTargetSizePreview(mb: Float) {

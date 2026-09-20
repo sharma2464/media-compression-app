@@ -1,49 +1,56 @@
 # Media Compression
 
-Swipe through your media library and decide what gets compressed:
+Android app to browse on-device storage and compress photos and videos with
+target-size presets (inspired by [Josh Atticus Compressor](https://github.com/JoshAtticus/Compressor)).
 
-- **Swipe left** — don't compress, keep as-is
-- **Swipe right** — queue for compression
-- **Swipe up** — put back in the queue for later review
-- **Swipe down** — show full details/metadata for the file
+- **Files** — tabbed browser (internal storage, SD when available) with cached listings
+- **Compress** — full-screen flow: presets, video/audio options, batch progress, completion preview
+- **Settings** — compression mode, storage behavior, theme (auto / light / dark)
 
-Accepted files are compressed in the background. Every file is backed up to a
-`BACKUP/` folder (mirroring the original folder structure) before it's
-replaced in place, and metadata/EXIF/timestamps are preserved.
-
-## Compression modes
-
-"Lossless" and "90% smaller" are mutually exclusive for most already-compressed
-files (JPEG, MP4, PDF). Pick a mode in Settings:
-
-- **Lossless only** — true bit-exact-content recompression where possible.
-  Savings are modest and reported honestly (often nowhere near 90%).
-- **Adaptive** — tries lossless first, falls back to high-quality lossy
-  re-encoding (WebP/HEVC) to actually reach large size reductions. The app
-  always reports which one happened — it never mislabels lossy output as
-  lossless.
+Compressed output can be saved as a mirrored `COMPRESSED/` copy or replace-in-place
+with backups under `ORIGINALS/` depending on settings.
 
 ## Stack
 
-Kotlin + Jetpack Compose, Room, WorkManager, Media3 Transformer (hardware-
-accelerated video transcode), Coil, AndroidX ExifInterface, pdfbox-android.
-Storage access is via the Storage Access Framework (SAF) — no broad "All
-files access" permission required.
+Kotlin, Jetpack Compose, Room, WorkManager, Media3 Transformer (video), Coil,
+ExifInterface. **arm64-v8a** only in release builds (~20 MB APK). Optional
+**Manage all files** access improves browsing across volumes and reliable timestamps.
 
 ## Building
 
-Requires JDK 17 and the Android SDK (compileSdk 34). Open in Android Studio,
-or from the CLI:
+Requires JDK 17 and Android SDK (compileSdk 34).
 
+```bash
+./gradlew assembleDebug          # installable debug APK
+./gradlew installDebug           # device connected via adb
+./gradlew testDebugUnitTest      # unit tests
 ```
-./gradlew assembleDebug
+
+Release builds use R8 (`assembleRelease`) but are **unsigned**; GitHub releases ship
+the **debug-signed** APK from `assembleDebug` for sideloading.
+
+## Releases
+
+Published on [GitHub Releases](https://github.com/sharma2464/media-compression-app/releases)
+as `media-compression-{version}.apk`.
+
+**Maintainers — local release** (also documented in `.cursor/skills/release/SKILL.md`):
+
+1. Bump `versionName` / `versionCode` in `app/build.gradle.kts`.
+2. Commit and push `main`.
+3. Run:
+
+```bash
+chmod +x scripts/release.sh   # once
+./scripts/release.sh
 ```
 
-## Known limitations (tracked as issues)
+This runs tests, builds the APK into `release-out/`, and creates the GitHub release
+with `gh`. CI workflow `.github/workflows/release.yml` does the same on push to `main`
+when Actions runners are available.
 
-- Video has no practical lossless codec on-device; lossless mode currently
-  passes video through unchanged rather than faking a lossless re-encode.
-- PDF adaptive mode currently does lossless stream recompression only;
-  per-image downsampling is tracked separately.
-- Timestamp restoration depends on what the underlying SAF storage provider
-  allows; not guaranteed on all providers (e.g. some cloud-backed ones).
+## Known limitations
+
+- Video has no practical lossless on-device path; lossless mode may pass video through unchanged.
+- Timestamp restoration depends on the storage provider (some cloud-backed paths are limited).
+- Folder size labels in the browser reflect **immediate children** only (avoids heavy tree walks).

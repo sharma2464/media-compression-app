@@ -110,18 +110,25 @@ class FileBrowserViewModel(context: Context) : ViewModel() {
     private fun loadDirectory(dir: File, forceRescan: Boolean) {
         activeDirectory = dir
         viewModelScope.launch(Dispatchers.IO) {
-            _loadState.value = BrowserLoadState.Loading(
-                directoryName = dir.name.ifEmpty { dir.absolutePath },
-                message = if (forceRescan) "Rescanning…" else "Loading cached files…",
-            )
-            if (!forceRescan) {
-                val cached = cache.loadChildren(dir)
-                if (cached != null) {
-                    publishEntries(cached, fromCache = true)
-                    return@launch
+            try {
+                _loadState.value = BrowserLoadState.Loading(
+                    directoryName = dir.name.ifEmpty { dir.absolutePath },
+                    message = if (forceRescan) "Rescanning…" else "Loading cached files…",
+                )
+                if (!forceRescan) {
+                    val cached = cache.loadChildren(dir)
+                    if (cached != null) {
+                        publishEntries(cached, fromCache = true)
+                        return@launch
+                    }
                 }
+                scanAndCacheDirectory(dir)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                allEntries = emptyList()
+                emitEntries(emptyList())
+                _loadState.value = BrowserLoadState.Ready(fromCache = false)
             }
-            scanAndCacheDirectory(dir)
         }
     }
 
@@ -228,16 +235,20 @@ class FileBrowserViewModel(context: Context) : ViewModel() {
         emitEntries(filterAndSort(allEntries))
     }
 
+    /** Immediate children only — recursive walks on large trees OOM'd at cold start. */
     private fun computeDirMetadata(dir: File): Pair<Long, Int> {
+        val children = dir.listFiles() ?: return 0L to 0
+        if (children.isEmpty()) return 0L to 0
         var totalSize = 0L
         var fileCount = 0
-        dir.walk().forEach { f ->
-            if (f.isFile) {
-                totalSize += f.length()
+        for (child in children) {
+            if (child.isFile) {
+                totalSize += child.length()
                 fileCount++
             }
         }
-        return totalSize to fileCount
+        val displayCount = if (fileCount > 0) fileCount else children.size
+        return totalSize to displayCount
     }
 
     private fun getDateTakenMs(file: File, kind: FileKind): Long? {

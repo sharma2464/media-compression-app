@@ -9,8 +9,8 @@ import java.io.File
  */
 data class PlannedVideoEncode(
     val videoMime: String,
-    val targetWidth: Int?,
-    val targetHeight: Int?,
+    /** Stored video height; 0 = keep original. */
+    val outputVideoHeight: Int,
     val outputFps: Int?,
     val videoBitrateBps: Int,
     val audioBitrateBps: Int,
@@ -25,13 +25,11 @@ object VideoEncodePlanner {
     ): PlannedVideoEncode {
         val probe = if (file.isFile) VideoTrackProbe.probe(file) else MediaTrackProbe(null, null)
         val durationMs = videoMeta.durationMs.coerceAtLeast(1L)
-        val origH = videoMeta.height
         val origW = videoMeta.width
+        val origH = videoMeta.height
         val origFps = (videoMeta.frameRate ?: 30f).toInt().coerceAtLeast(1)
 
-        val (baseW, baseH) = VideoMetadataProbe.targetDimensions(videoMeta, settings.resolution)
-        var targetW = baseW
-        var targetH = baseH
+        var outputHeight = resolveOutputHeight(videoMeta, settings)
         var outputFps = VideoMetadataProbe.targetFps(videoMeta, settings.frameRate)
 
         var audioBps = when {
@@ -50,42 +48,56 @@ object VideoEncodePlanner {
                 removeAudio = settings.removeAudio,
                 durationMs = durationMs,
                 targetMb = targetMb,
-                startHeight = targetH,
+                startOutputHeight = outputHeight,
                 startFps = outputFps ?: origFps,
                 startAudioBps = audioBps,
             )
-            targetH = adjusted.outputHeight
-            targetW = scaleWidth(origW, origH, targetH)
+            outputHeight = adjusted.outputHeight
             outputFps = adjusted.outputFps
             audioBps = adjusted.audioBitrateBps
         }
 
-        val mime = when (settings.videoCodec) {
-            VideoCodec.H265 -> MimeTypes.VIDEO_H265
-            VideoCodec.H264 -> MimeTypes.VIDEO_H264
-        }
+        val compressionPlan = VideoCompressionPlanner.build(
+            probe,
+            videoMeta,
+            settings,
+            outputHeight,
+            outputFps,
+        )
+        outputHeight = compressionPlan.outputVideoHeight
+        if (compressionPlan.outputFps > 0) outputFps = compressionPlan.outputFps
+
+        val mime = compressionPlan.videoMime
         val durationSec = durationMs / 1000.0
         val effectiveFps = outputFps ?: origFps
+        val heightForBitrate = if (outputHeight > 0) outputHeight else origH
         val videoBr = targetBitrateFromSize(
-            targetMb = targetMb ?: 10f,
+            targetMb = targetMb ?: settings.targetSizeMb,
             durationSec = durationSec,
             audioBps = audioBps,
             removeAudio = settings.removeAudio,
-            outputHeight = targetH,
+            outputHeight = heightForBitrate,
             outputFps = effectiveFps,
             videoMime = mime,
             originalBitrate = videoMeta.bitrateBps ?: probe.video?.bitrate ?: 0,
         )
 
-        val tw = if (targetW < origW || targetH < origH) targetW else null
-        val th = if (targetW < origW || targetH < origH) targetH else null
-
-        return PlannedVideoEncode(mime, tw, th, outputFps, videoBr, audioBps)
+        return PlannedVideoEncode(mime, outputHeight, outputFps, videoBr, audioBps)
     }
 
-    private fun scaleWidth(origW: Int, origH: Int, targetH: Int): Int {
-        if (origH <= 0) return origW
-        return (origW.toLong() * targetH / origH).toInt().coerceAtLeast(2)
+    private fun resolveOutputHeight(meta: VideoMetadata, settings: CompressJobSettings): Int {
+        if (settings.resolution == ResolutionChoice.ORIGINAL) return 0
+        val longEdge = maxOf(meta.width, meta.height)
+        val shortSideCap = when (settings.resolution) {
+            ResolutionChoice.P1080 -> 1080
+            ResolutionChoice.P720 -> 720
+            ResolutionChoice.P540 -> 540
+            ResolutionChoice.P480 -> 480
+            ResolutionChoice.THREE_QUARTERS -> (longEdge * 0.75).toInt()
+            ResolutionChoice.QUARTER -> (longEdge * 0.25).toInt().coerceAtLeast(144)
+            ResolutionChoice.ORIGINAL -> return 0
+        }
+        return VideoDimensions.outputHeightForShortSide(meta.width, meta.height, shortSideCap)
     }
 
     private data class AdjustResult(
@@ -102,14 +114,13 @@ object VideoEncodePlanner {
         removeAudio: Boolean,
         durationMs: Long,
         targetMb: Float,
-        startHeight: Int,
+        startOutputHeight: Int,
         startFps: Int,
         startAudioBps: Int,
     ): AdjustResult {
-        var h = startHeight.coerceAtMost(originalHeight)
+        var outputHeight = if (startOutputHeight > 0) startOutputHeight else originalHeight
         var fps = startFps
         var audio = startAudioBps
-        val isVertical = originalHeight > originalWidth
 
         fun minMb(height: Int, fpsVal: Int, audioBps: Int): Float {
             val minBr = minVideoBitrateBps(height, fpsVal, videoCodec)
@@ -120,7 +131,7 @@ object VideoEncodePlanner {
         }
 
         var attempts = 0
-        while (minMb(h, fps, audio) > targetMb && attempts++ < 20) {
+        while (minMb(outputHeight, fps, audio) > targetMb && attempts++ < 20) {
             if (!removeAudio && audio > 128_000) {
                 audio = 128_000
                 continue
@@ -129,7 +140,7 @@ object VideoEncodePlanner {
                 fps = 30
                 continue
             }
-            val shortSide = if (isVertical && originalWidth > 0) h * originalWidth / originalHeight else h
+            val shortSide = VideoDimensions.shortSideForOutputHeight(originalWidth, originalHeight, outputHeight)
             val newShort = when {
                 shortSide > 2160 -> 2160
                 shortSide > 1080 -> 1080
@@ -137,13 +148,9 @@ object VideoEncodePlanner {
                 shortSide > 480 -> 480
                 else -> 360
             }
-            val newH = if (isVertical && originalWidth > 0) {
-                ((newShort.toLong() * originalHeight + originalWidth - 1) / originalWidth).toInt()
-            } else {
-                newShort
-            }
-            if (newH < h) {
-                h = newH
+            val newHeight = VideoDimensions.outputHeightForShortSide(originalWidth, originalHeight, newShort)
+            if (newHeight < outputHeight) {
+                outputHeight = newHeight
                 continue
             }
             if (fps > 24) {
@@ -152,7 +159,7 @@ object VideoEncodePlanner {
             }
             break
         }
-        return AdjustResult(h.coerceAtLeast(2), fps, audio)
+        return AdjustResult(outputHeight.coerceAtLeast(2), fps, audio)
     }
 
     private fun minVideoBitrateBps(height: Int, fps: Int, codec: VideoCodec): Long {

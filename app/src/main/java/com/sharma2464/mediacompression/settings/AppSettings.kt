@@ -49,21 +49,21 @@ class AppSettings(context: Context) {
     var sessionCompressJobSettings: CompressJobSettings? = null
 
     var compressionStrength: CompressionStrength
-        get() = CompressionStrength.valueOf(
-            prefs.getString(KEY_STRENGTH, CompressionStrength.BALANCED.name) ?: CompressionStrength.BALANCED.name,
-        )
+        get() = prefs.getString(KEY_STRENGTH, CompressionStrength.BALANCED.name)
+            ?.let { runCatching { CompressionStrength.valueOf(it) }.getOrNull() }
+            ?: CompressionStrength.BALANCED
         set(value) = prefs.edit { putString(KEY_STRENGTH, value.name) }
 
     var compressionMode: CompressionMode
-        get() = CompressionMode.valueOf(
-            prefs.getString(KEY_MODE, CompressionMode.ADAPTIVE.name) ?: CompressionMode.ADAPTIVE.name,
-        )
+        get() = prefs.getString(KEY_MODE, CompressionMode.ADAPTIVE.name)
+            ?.let { runCatching { CompressionMode.valueOf(it) }.getOrNull() }
+            ?: CompressionMode.ADAPTIVE
         set(value) = prefs.edit { putString(KEY_MODE, value.name) }
 
     var storageMode: StorageMode
-        get() = StorageMode.valueOf(
-            prefs.getString(KEY_STORAGE_MODE, StorageMode.COMPRESSED_COPY.name) ?: StorageMode.COMPRESSED_COPY.name,
-        )
+        get() = prefs.getString(KEY_STORAGE_MODE, StorageMode.COMPRESSED_COPY.name)
+            ?.let { runCatching { StorageMode.valueOf(it) }.getOrNull() }
+            ?: StorageMode.COMPRESSED_COPY
         set(value) = prefs.edit { putString(KEY_STORAGE_MODE, value.name) }
 
     // Defaults to every kind enabled; stored as a comma-joined set of FileKind names.
@@ -74,9 +74,9 @@ class AppSettings(context: Context) {
         set(value) = prefs.edit { putStringSet(KEY_ENABLED_KINDS, value.map { it.name }.toSet()) }
 
     var themeMode: ThemeMode
-        get() = ThemeMode.valueOf(
-            prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name,
-        )
+        get() = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name)
+            ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+            ?: ThemeMode.SYSTEM
         set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
 
     companion object {

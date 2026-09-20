@@ -20,8 +20,9 @@ object CompressSettingsEstimator {
         val meta = primaryVideo?.let { VideoMetadataProbe.probe(it) }
         val profile = CompressSettingsMapper.toProfile(mode, settings, meta, primaryVideo)
         var total = 0L
-        val capBytes = settings.platformTarget?.maxBytes
-            ?: (settings.targetSizeMb * 1024 * 1024).toLong().takeIf { settings.targetSizeMb > 0f }
+        val capBytes = (settings.targetSizeMb * 1024 * 1024).toLong()
+            .takeIf { settings.targetSizeMb > 0f }
+            ?: settings.platformTarget?.maxBytes
         for ((file, kind) in files) {
             val size = if (file.isDirectory) file.walk().filter { it.isFile }.sumOf { it.length() } else file.length()
             var ratio = profile.estimatedSizeRatio(kind)

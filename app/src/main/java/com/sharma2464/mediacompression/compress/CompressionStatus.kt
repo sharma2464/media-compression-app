@@ -19,11 +19,27 @@ data class CompressionBatch(
     val rateBytesPerSec: Long = 0L,
 )
 
+data class CompressionFinishedItem(
+    val displayName: String,
+    val outputPath: String,
+    val originalBytes: Long,
+    val compressedBytes: Long,
+    val isVideo: Boolean,
+)
+
+data class CompressionFinishedSummary(
+    val items: List<CompressionFinishedItem>,
+    val modeLabel: String,
+)
+
 /** In-process broadcast of compression progress, shared by the foreground service's
  *  notification and the in-app FAB/dialog so they always agree. */
 object CompressionStatus {
     private val _batch = MutableStateFlow<CompressionBatch?>(null)
     val batch: StateFlow<CompressionBatch?> = _batch
+
+    private val _finished = MutableStateFlow<CompressionFinishedSummary?>(null)
+    val finished: StateFlow<CompressionFinishedSummary?> = _finished
 
     private val _cancelRequested = MutableStateFlow(false)
     val cancelRequested: StateFlow<Boolean> = _cancelRequested
@@ -61,8 +77,19 @@ object CompressionStatus {
         _cancelRequested.value = true
     }
 
+    fun complete(summary: CompressionFinishedSummary) {
+        _batch.value = null
+        _finished.value = summary
+        _cancelRequested.value = false
+    }
+
+    fun dismissFinished() {
+        _finished.value = null
+    }
+
     fun clear() {
         _batch.value = null
+        _finished.value = null
         _cancelRequested.value = false
     }
 }

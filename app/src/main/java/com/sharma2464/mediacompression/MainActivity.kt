@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
                     val isScanning = loadState is BrowserLoadState.Scanning
                     val selected by fileBrowserViewModel.selected.collectAsState()
                     val compressionBatch by CompressionStatus.batch.collectAsState()
+                    val compressionFinished by CompressionStatus.finished.collectAsState()
                     val compressibleCount = remember(selected) { compressibleFilesInSelection(selected).size }
 
                     var compressDialogVisible by remember { mutableStateOf(false) }
@@ -123,10 +124,24 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    LaunchedEffect(compressionFinished, hasFullAccess) {
+                        val summary = compressionFinished
+                        if (hasFullAccess && summary != null && summary.items.isNotEmpty()) {
+                            compressDialogVisible = true
+                            compressDialogStage = CompressDialogStage.Complete
+                        }
+                    }
+
                     BackHandler(enabled = hasFullAccess && compressDialogVisible) {
                         when (compressDialogStage) {
                             CompressDialogStage.Preview -> compressDialogVisible = false
                             CompressDialogStage.Progress -> compressDialogVisible = false
+                            CompressDialogStage.Complete -> {
+                                CompressionStatus.dismissFinished()
+                                compressDialogVisible = false
+                                compressDialogStage = CompressDialogStage.Preview
+                                fileBrowserViewModel.rescanCurrentDirectory()
+                            }
                         }
                     }
 
@@ -247,7 +262,7 @@ class MainActivity : ComponentActivity() {
                                 compressDialogVisible = false
                                 compressDialogStage = CompressDialogStage.Preview
                                 compressPreviewState = null
-                                fileBrowserViewModel.clearSelected()
+                                fileBrowserViewModel.rescanCurrentDirectory()
                             },
                         )
                         }

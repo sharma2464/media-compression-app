@@ -74,7 +74,7 @@ fun CompressFlowPreview(
             primaryVideo,
         )
     }
-    val uiState = remember(state, jobSettings, videoMeta, estimated) {
+    val uiState = remember(state, jobSettings, videoMeta, primaryVideo, estimated) {
         CompressFlowUiState.build(
             context = context,
             previewTotalBytes = state.totalBytes,
@@ -82,6 +82,7 @@ fun CompressFlowPreview(
             batchLabel = state.locationPath,
             settings = jobSettings,
             meta = videoMeta,
+            videoFile = primaryVideo,
             estimatedBytes = estimated,
             supportedCodecs = listOf(MimeTypes.VIDEO_H265, MimeTypes.VIDEO_H264),
         )

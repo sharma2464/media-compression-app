@@ -33,6 +33,8 @@ data class CompressionProfile(
     val targetFps: Int? = null,
     val targetWidth: Int? = null,
     val targetHeight: Int? = null,
+    /** Stored height before encode; preferred over targetWidth/targetHeight (Josh model). */
+    val outputVideoHeight: Int? = null,
     val preferFfmpeg: Boolean = false,
     /** When set (e.g. platform size cap), overrides factor-based video bitrate. */
     val targetVideoBitrateBps: Int? = null,

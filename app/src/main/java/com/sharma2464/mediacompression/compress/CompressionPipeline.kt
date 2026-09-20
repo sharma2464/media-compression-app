@@ -34,7 +34,7 @@ class CompressionPipeline(private val context: Context) {
         return CompressSettingsMapper.toProfile(settings.compressionMode, job, meta, localFile)
     }
 
-    suspend fun process(entry: FileEntry, onProgress: (Int) -> Unit = {}) {
+    suspend fun process(entry: FileEntry, onProgress: (Int) -> Unit = {}): CompressionProcessResult? {
         val entryUri = Uri.parse(entry.uri)
 
         // Input and output live in separate directories: compressors write passthrough
@@ -48,16 +48,16 @@ class CompressionPipeline(private val context: Context) {
         // Source can be either SAF (content://) or real file (file://)
         if (entryUri.scheme == "file") {
             val sourceFile = File(entryUri.path!!)
-            if (!sourceFile.exists() || !sourceFile.canRead()) return
+            if (!sourceFile.exists() || !sourceFile.canRead()) return null
             copyFileWithProgress(sourceFile, localCopy) { pct ->
                 onProgress(CompressionProgressPhases.stagingPercent(stagingTotal * pct / 100, stagingTotal))
             }
-            processRealFile(entry, sourceFile, localCopy, workDir, onProgress)
+            return processRealFile(entry, sourceFile, localCopy, workDir, onProgress)
         } else {
             // SAF path (original)
-            val rootUri = Uri.parse(settings.rootTreeUri ?: return)
-            val root = DocumentFile.fromTreeUri(context, rootUri) ?: return
-            val sourceDoc = findByRelativePath(root, entry.relativePath) ?: return
+            val rootUri = Uri.parse(settings.rootTreeUri ?: return null)
+            val root = DocumentFile.fromTreeUri(context, rootUri) ?: return null
+            val sourceDoc = findByRelativePath(root, entry.relativePath) ?: return null
             context.contentResolver.openInputStream(sourceDoc.uri)!!.use { input ->
                 localCopy.outputStream().use { output ->
                     copyStreamWithProgress(input, output, stagingTotal) { pct ->
@@ -65,7 +65,7 @@ class CompressionPipeline(private val context: Context) {
                     }
                 }
             }
-            processSafFile(entry, root, sourceDoc, localCopy, workDir, onProgress)
+            return processSafFile(entry, root, sourceDoc, localCopy, workDir, onProgress)
         }
     }
 
@@ -76,7 +76,7 @@ class CompressionPipeline(private val context: Context) {
         localCopy: File,
         workDir: File,
         onProgress: (Int) -> Unit,
-    ) {
+    ): CompressionProcessResult? {
         val storageMode = settings.storageMode
         if (storageMode == StorageMode.REPLACE_IN_PLACE) {
             backupOriginal(root, entry.relativePath, localCopy)
@@ -93,14 +93,14 @@ class CompressionPipeline(private val context: Context) {
         val destinationFile = when (settings.storageMode) {
             StorageMode.REPLACE_IN_PLACE -> {
                 backupRealFile(File(entry.relativePath), localCopy)
-                File(File(entry.relativePath).parent ?: return, newName).apply {
+                File(File(entry.relativePath).parent ?: return null, newName).apply {
                     copyFileWithProgress(result.outputFile, this) { pct ->
                         onProgress(CompressionProgressPhases.savingPercent(saveTotal * pct / 100, saveTotal))
                     }
                 }
             }
             StorageMode.COMPRESSED_COPY -> {
-                val compressedDir = File(File(entry.relativePath).parent ?: return, "COMPRESSED")
+                val compressedDir = File(File(entry.relativePath).parent ?: return null, "COMPRESSED")
                 compressedDir.mkdirs()
                 File(compressedDir, newName).apply {
                     copyFileWithProgress(result.outputFile, this) { pct ->
@@ -127,6 +127,12 @@ class CompressionPipeline(private val context: Context) {
 
         localCopy.delete()
         if (result.outputFile != localCopy) result.outputFile.delete()
+        return CompressionProcessResult(
+            destinationFile = destinationFile,
+            originalBytes = entry.sizeBytes,
+            compressedBytes = destinationFile.length(),
+            isVideo = entry.kind == FileKind.VIDEO,
+        )
     }
 
     private suspend fun processRealFile(
@@ -135,7 +141,7 @@ class CompressionPipeline(private val context: Context) {
         localCopy: File,
         workDir: File,
         onProgress: (Int) -> Unit,
-    ) {
+    ): CompressionProcessResult? {
         // Reuses the same compress → backup/replace logic as SAF, but with real files
         val storageMode = settings.storageMode
         if (storageMode == StorageMode.REPLACE_IN_PLACE) {
@@ -152,7 +158,7 @@ class CompressionPipeline(private val context: Context) {
 
         val destinationFile = when (storageMode) {
             StorageMode.REPLACE_IN_PLACE -> {
-                File(sourceFile.parent ?: return, newName).apply {
+                File(sourceFile.parent ?: return null, newName).apply {
                     copyFileWithProgress(result.outputFile, this) { pct ->
                         onProgress(CompressionProgressPhases.savingPercent(saveTotal * pct / 100, saveTotal))
                     }
@@ -186,6 +192,12 @@ class CompressionPipeline(private val context: Context) {
 
         localCopy.delete()
         if (result.outputFile != localCopy) result.outputFile.delete()
+        return CompressionProcessResult(
+            destinationFile = destinationFile,
+            originalBytes = entry.sizeBytes,
+            compressedBytes = destinationFile.length(),
+            isVideo = entry.kind == FileKind.VIDEO,
+        )
     }
 
     // settings.destinationTreeUri (picked via SAF in Settings) is the same destination the

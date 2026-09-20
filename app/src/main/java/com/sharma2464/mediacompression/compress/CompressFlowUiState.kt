@@ -59,8 +59,8 @@ data class CompressFlowUiState(
                 },
             )
         }
-        if (planned.targetHeight != null && planned.targetWidth != null) {
-            next = next.copy(resolution = resolutionChoiceFor(meta, planned.targetHeight))
+        if (planned.outputVideoHeight > 0) {
+            next = next.copy(resolution = resolutionChoiceFor(meta, planned.outputVideoHeight))
         }
         if (!current.removeAudio && planned.audioBitrateBps > 0) {
             next = next.copy(audioBitrateKbps = planned.audioBitrateBps / 1000)
@@ -76,6 +76,7 @@ data class CompressFlowUiState(
             batchLabel: String,
             settings: CompressJobSettings,
             meta: VideoMetadata?,
+            videoFile: java.io.File?,
             estimatedBytes: Long,
             supportedCodecs: List<String>,
         ): CompressFlowUiState {
@@ -84,8 +85,23 @@ data class CompressFlowUiState(
             val fps = meta?.frameRate ?: 30f
             val duration = meta?.durationMs ?: 0L
             val origBr = meta?.bitrateBps ?: 0
-            val (tw, th) = meta?.let { VideoMetadataProbe.targetDimensions(it, settings.resolution) } ?: (0 to 0)
-            val targetH = if (th > 0 && th < h) th else 0
+            val plannedH = if (meta != null && videoFile != null && settings.targetSizeMb > 0f) {
+                VideoEncodePlanner.planWithDuration(
+                    videoFile,
+                    settings,
+                    meta,
+                    (settings.targetSizeMb * 1024 * 1024).toLong(),
+                ).outputVideoHeight
+            } else {
+                0
+            }
+            val targetH = when {
+                plannedH > 0 && plannedH < h -> plannedH
+                else -> {
+                    val (_, th) = meta?.let { VideoMetadataProbe.targetDimensions(it, settings.resolution) } ?: (0 to 0)
+                    if (th > 0 && th < h) th else 0
+                }
+            }
             val targetFps = meta?.let { VideoMetadataProbe.targetFps(it, settings.frameRate) } ?: 0
             val mime = when (settings.videoCodec) {
                 VideoCodec.H265 -> MimeTypes.VIDEO_H265

@@ -28,6 +28,7 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
         val modeLabel = CompressSettingsMapper.summaryLabel(job)
         CompressionStatus.startBatch(queued.map { it.displayName to it.sizeBytes }, modeLabel)
 
+        val finishedItems = mutableListOf<CompressionFinishedItem>()
         try {
             for ((index, entry) in queued.withIndex()) {
                 CompressionStatus.updateCurrentFile(index, percent = 0, rateBytesPerSec = 0)
@@ -36,7 +37,7 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                 var lastProcessedBytes = 0L
                 var lastTickMs = System.currentTimeMillis()
                 try {
-                    pipeline.process(entry) { percent ->
+                    val output = pipeline.process(entry) { percent ->
                         val now = System.currentTimeMillis()
                         val processedBytes = entry.sizeBytes * percent / 100
                         val dtMs = (now - lastTickMs).coerceAtLeast(1)
@@ -44,6 +45,15 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                         lastProcessedBytes = processedBytes
                         lastTickMs = now
                         CompressionStatus.updateCurrentFile(index, percent, rate)
+                    }
+                    output?.let { result ->
+                        finishedItems += CompressionFinishedItem(
+                            displayName = result.destinationFile.name,
+                            outputPath = result.destinationFile.absolutePath,
+                            originalBytes = result.originalBytes,
+                            compressedBytes = result.compressedBytes,
+                            isVideo = result.isVideo,
+                        )
                     }
                     CompressionStatus.markDone(index)
                 } catch (e: CancellationException) {
@@ -58,7 +68,16 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
             settings.sessionDestinationTreeUri = null
             settings.sessionCompressionStrength = null
             settings.sessionCompressJobSettings = null
-            CompressionStatus.clear()
+            if (finishedItems.isNotEmpty()) {
+                CompressionStatus.complete(
+                    CompressionFinishedSummary(
+                        items = finishedItems,
+                        modeLabel = modeLabel,
+                    ),
+                )
+            } else {
+                CompressionStatus.clear()
+            }
         }
         return Result.success()
     }

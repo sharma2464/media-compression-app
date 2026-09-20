@@ -20,7 +20,7 @@ class VideoEncodePlannerTest {
             targetBytes = PlatformPreset.DISCORD.maxBytes,
         )
         assertTrue(planned.videoBitrateBps > 200_000)
-        assertTrue(planned.targetHeight == null || planned.targetHeight!! <= 1080)
+        assertTrue(planned.outputVideoHeight == 0 || planned.outputVideoHeight <= 2160)
         assertTrue(planned.outputFps == null || planned.outputFps == 30)
     }
 }

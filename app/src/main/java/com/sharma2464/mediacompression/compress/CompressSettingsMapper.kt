@@ -24,44 +24,47 @@ object CompressSettingsMapper {
         var resolution = settings.resolution
         var frameRate = settings.frameRate
         var targetVideoBitrateBps: Int? = null
-        var plannedTw: Int? = null
-        var plannedTh: Int? = null
+        var outputVideoHeight: Int? = null
         var plannedFps: Int? = null
         var plannedAudioBps: Int? = null
-        val targetBytes = settings.platformTarget?.maxBytes
-            ?: (settings.targetSizeMb * 1024 * 1024).toLong().takeIf { settings.targetSizeMb > 0f }
-        targetBytes?.let { cap ->
-            if (videoMeta != null && videoMeta.durationMs > 0 && videoFile != null) {
-                val planned = VideoEncodePlanner.planWithDuration(
-                    videoFile,
-                    settings,
-                    videoMeta,
-                    cap,
-                )
-                targetVideoBitrateBps = planned.videoBitrateBps
-                plannedTw = planned.targetWidth
-                plannedTh = planned.targetHeight
-                plannedFps = planned.outputFps
-                plannedAudioBps = planned.audioBitrateBps
-                val sourceBr = videoMeta.bitrateBps?.toDouble() ?: 4_000_000.0
-                bitrateFactor = minOf(bitrateFactor, planned.videoBitrateBps / sourceBr)
-            } else if (videoMeta != null && videoMeta.durationMs > 0 && settings.platformTarget != null) {
-                val platform = settings.platformTarget!!
-                val longEdge = maxOf(videoMeta.width, videoMeta.height)
-                if (longEdge > 1080 && resolution == ResolutionChoice.ORIGINAL) {
-                    resolution = ResolutionChoice.P1080
-                }
-                if (frameRate == FrameRateChoice.ORIGINAL && (videoMeta.frameRate ?: 0f) > 31f) {
-                    frameRate = FrameRateChoice.FPS_30
-                }
-                val durationSec = videoMeta.durationMs / 1000.0
-                val audioKbps = settings.audioBitrateKbps ?: 128
-                val audioBits = if (settings.removeAudio) 0 else audioKbps * 1000
-                val maxVideoBps = ((platform.maxBytes * 8) / durationSec - audioBits).coerceAtLeast(200_000.0)
-                targetVideoBitrateBps = maxVideoBps.toInt()
-                val sourceBr = videoMeta.bitrateBps?.toDouble() ?: 4_000_000.0
-                bitrateFactor = minOf(bitrateFactor, maxVideoBps / sourceBr)
+        var videoCodec = settings.videoCodec
+
+        val targetBytes = (settings.targetSizeMb * 1024 * 1024).toLong()
+            .takeIf { settings.targetSizeMb > 0f }
+        if (targetBytes != null && videoMeta != null && videoMeta.durationMs > 0 && videoFile != null) {
+            val planned = VideoEncodePlanner.planWithDuration(
+                videoFile,
+                settings,
+                videoMeta,
+                targetBytes,
+            )
+            targetVideoBitrateBps = planned.videoBitrateBps
+            outputVideoHeight = planned.outputVideoHeight.takeIf { it > 0 }
+            plannedFps = planned.outputFps
+            plannedAudioBps = planned.audioBitrateBps
+            videoCodec = if (planned.videoMime == androidx.media3.common.MimeTypes.VIDEO_H264) {
+                VideoCodec.H264
+            } else {
+                VideoCodec.H265
             }
+            val sourceBr = videoMeta.bitrateBps?.toDouble() ?: 4_000_000.0
+            bitrateFactor = minOf(bitrateFactor, planned.videoBitrateBps / sourceBr)
+        } else if (videoMeta != null && settings.platformTarget != null && videoMeta.durationMs > 0) {
+            val platform = settings.platformTarget!!
+            val longEdge = maxOf(videoMeta.width, videoMeta.height)
+            if (longEdge > 1080 && resolution == ResolutionChoice.ORIGINAL) {
+                resolution = ResolutionChoice.P1080
+            }
+            if (frameRate == FrameRateChoice.ORIGINAL && (videoMeta.frameRate ?: 0f) > 31f) {
+                frameRate = FrameRateChoice.FPS_30
+            }
+            val durationSec = videoMeta.durationMs / 1000.0
+            val audioKbps = settings.audioBitrateKbps ?: 128
+            val audioBits = if (settings.removeAudio) 0 else audioKbps * 1000
+            val maxVideoBps = ((platform.maxBytes * 8) / durationSec - audioBits).coerceAtLeast(200_000.0)
+            targetVideoBitrateBps = maxVideoBps.toInt()
+            val sourceBr = videoMeta.bitrateBps?.toDouble() ?: 4_000_000.0
+            bitrateFactor = minOf(bitrateFactor, maxVideoBps / sourceBr)
         }
 
         val strength = when {
@@ -78,14 +81,17 @@ object CompressSettingsMapper {
             }
         }
 
-        val maxEdge = if (plannedTw == null && plannedTh == null) {
+        val maxEdge = if (outputVideoHeight == null) {
             videoMeta?.let { VideoMetadataProbe.maxLongEdge(it, resolution) }
         } else {
             null
         }
-        val targetFps = plannedFps?.takeIf { it > 0 } ?: videoMeta?.let { VideoMetadataProbe.targetFps(it, frameRate) }
-        val (tw, th) = if (plannedTw != null && plannedTh != null) {
-            plannedTw to plannedTh
+        val targetFps = plannedFps?.takeIf { it > 0 }
+            ?: videoMeta?.let { VideoMetadataProbe.targetFps(it, frameRate) }
+
+        val (tw, th) = if (outputVideoHeight != null && videoMeta != null) {
+            VideoDimensions.presentationSize(videoMeta.width, videoMeta.height, outputVideoHeight)
+                ?: (null to null)
         } else {
             videoMeta?.let { VideoMetadataProbe.targetDimensions(it, resolution) } ?: (null to null)
         }
@@ -97,12 +103,13 @@ object CompressSettingsMapper {
             audioBitrateBps = if (settings.removeAudio) 0 else audioBps.coerceAtLeast(32_000),
             maxVideoLongEdge = maxEdge,
             photoWebpQuality = photoQuality(settings),
-            videoCodec = settings.videoCodec,
+            videoCodec = videoCodec,
             removeAudio = settings.removeAudio,
             volumePercent = settings.volumePercent.coerceIn(0, 100),
             targetFps = targetFps,
             targetWidth = tw,
             targetHeight = th,
+            outputVideoHeight = outputVideoHeight,
             preferFfmpeg = false,
             targetVideoBitrateBps = targetVideoBitrateBps,
         )

@@ -58,12 +58,13 @@ import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.settings.CompressionMode
 import com.sharma2464.mediacompression.settings.StorageMode
 import com.sharma2464.mediacompression.ui.compress.CompressFlowPreview
+import com.sharma2464.mediacompression.ui.compress.atticus.AtticusCompleteScreen
 import com.sharma2464.mediacompression.ui.compress.atticus.AtticusProgressScreen
 import com.sharma2464.mediacompression.ui.compress.strengthFromJob
 import kotlinx.coroutines.launch
 import java.io.File
 
-enum class CompressDialogStage { Preview, Progress }
+enum class CompressDialogStage { Preview, Progress, Complete }
 
 data class CompressPreviewItem(
     val file: File,
@@ -155,15 +156,12 @@ fun CompressionBatchDialog(
 
     val context = LocalContext.current
     val batch by CompressionStatus.batch.collectAsState()
+    val finished by CompressionStatus.finished.collectAsState()
     val scope = rememberCoroutineScope()
-    var hadActiveBatch by remember { mutableStateOf(false) }
 
-    LaunchedEffect(batch, stage) {
-        if (batch != null) {
-            hadActiveBatch = true
-        } else if (hadActiveBatch && stage == CompressDialogStage.Progress) {
-            hadActiveBatch = false
-            onCloseAfterBatch()
+    LaunchedEffect(finished) {
+        if (finished != null && stage == CompressDialogStage.Progress) {
+            onStageChange(CompressDialogStage.Complete)
         }
     }
 
@@ -207,12 +205,50 @@ fun CompressionBatchDialog(
                         onCancelConfirmed = {
                             CompressionStatus.requestCancel()
                             WorkManager.getInstance(context).cancelUniqueWork(CompressionWorker.WORK_NAME)
+                            CompressionStatus.clear()
                             onCloseAfterBatch()
                         },
                     )
                 }
+                CompressDialogStage.Complete -> {
+                    val summary = finished
+                    if (summary != null && summary.items.isNotEmpty()) {
+                        CompleteStage(
+                            summary = summary,
+                            onDone = {
+                                CompressionStatus.dismissFinished()
+                                onCloseAfterBatch()
+                            },
+                        )
+                    } else {
+                        LaunchedEffect(Unit) {
+                            CompressionStatus.dismissFinished()
+                            onCloseAfterBatch()
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompleteStage(
+    summary: com.sharma2464.mediacompression.compress.CompressionFinishedSummary,
+    onDone: () -> Unit,
+) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(title = { Text("Compress") })
+        },
+    ) { padding ->
+        AtticusCompleteScreen(
+            summary = summary,
+            onDone = onDone,
+            modifier = Modifier.padding(padding),
+        )
     }
 }
 
@@ -262,10 +298,16 @@ private fun ProgressStage(
             "—"
         }
         val fraction = batchOverallFraction(batch)
+        val currentPct = batch.files.getOrNull(batch.currentIndex)?.percent ?: 0
+        val phaseHint = when {
+            currentPct >= 85 && currentPct < 100 -> " · Finalizing encode…"
+            fraction >= 0.9f && fraction < 0.995f -> " · Saving…"
+            else -> ""
+        }
         Column(Modifier.padding(padding)) {
             AtticusProgressScreen(
                 title = "Compressing files",
-                subtitle = "${batch.modeLabel} · $currentName · $rateText",
+                subtitle = "${batch.modeLabel} · $currentName · $rateText$phaseHint",
                 progress = fraction,
                 onCancel = {
                     if (!cancelArmed) {

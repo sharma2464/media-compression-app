@@ -26,6 +26,8 @@ object VideoMetadataProbe {
             val fps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
                 ?: parseFraction(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT), duration)
             VideoMetadata(w, h, duration, bitrate, fps)
+        } catch (_: Exception) {
+            null
         } finally {
             retriever.release()
         }

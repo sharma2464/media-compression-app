@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Explicit texture_view surface type: PlayerView defaults to SurfaceView, which is
+  composited by the system outside the normal View draw pipeline and ignores Compose
+  clipping/z-order — breaks the before/after wipe-reveal clip and overlapping-player
+  touch handling in CompareScreen. TextureView draws through the normal pipeline instead.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/video_preview_player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view" />

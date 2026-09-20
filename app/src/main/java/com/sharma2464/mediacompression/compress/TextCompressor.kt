@@ -16,7 +16,7 @@ import java.io.File
  * file contents/extension at all.
  */
 class TextCompressor : Compressor {
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File): CompressionResult {
+    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val output = File(workDir, input.name)
         input.copyTo(output, overwrite = true)
         return CompressionResult(output, wasLossless = true)

@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
@@ -37,6 +38,7 @@ fun PdfPreview(uri: Uri, modifier: Modifier = Modifier.fillMaxWidth().height(320
         }
         Unit
     }
-    bitmap?.let { Image(it.asImageBitmap(), contentDescription = "PDF page 1", modifier = modifier) }
-        ?: Text("Rendering PDF…")
+    bitmap?.let {
+        Image(it.asImageBitmap(), contentDescription = "PDF page 1", modifier = modifier, contentScale = ContentScale.Crop)
+    } ?: Text("Rendering PDF…")
 }

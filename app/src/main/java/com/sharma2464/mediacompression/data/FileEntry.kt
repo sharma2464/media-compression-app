@@ -9,13 +9,12 @@ enum class Decision { PENDING, KEEP, COMPRESS, LATER, DONE }
 enum class FileKind { PHOTO, VIDEO, LIVE_PHOTO, PDF, DOCUMENT, TEXT, OTHER }
 
 /**
- * One indexed file under the user's chosen SAF root.
- * [uri] is the SAF document URI string; [relativePath] mirrors the source tree under
- * "<root name>_BACKUP/". The unique index on [relativePath] is what makes rescanning a
- * folder idempotent — a file already indexed (in any decision state, including DONE)
- * never gets a second row, so it's never reviewed or compressed twice.
+ * One indexed file, sourced from either a SAF tree (legacy) or a real-file browser.
+ * [uri] is either a "content://" (SAF) or "file://" URI string and must be unique.
+ * [relativePath] is for SAF-scanned files (mirrors tree under "<root name>_BACKUP/");
+ * for real-file browser entries, it holds the absolute file path for backup tracking.
  */
-@Entity(tableName = "file_entries", indices = [Index(value = ["relativePath"], unique = true)])
+@Entity(tableName = "file_entries", indices = [Index(value = ["uri"], unique = true)])
 data class FileEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val uri: String,

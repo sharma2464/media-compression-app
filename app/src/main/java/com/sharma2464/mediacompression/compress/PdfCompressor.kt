@@ -26,7 +26,7 @@ class PdfCompressor(context: Context) : Compressor {
         PDFBoxResourceLoader.init(context.applicationContext)
     }
 
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File): CompressionResult {
+    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val output = File(workDir, input.name)
         val lossless = mode == CompressionMode.LOSSLESS_ONLY
         PDDocument.load(input).use { doc ->

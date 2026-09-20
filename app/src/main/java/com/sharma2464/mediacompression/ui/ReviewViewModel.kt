@@ -21,10 +21,7 @@ class ReviewViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).fileEntryDao()
     val settings = AppSettings(app)
 
-    private val _current = MutableStateFlow<FileEntry?>(null)
-    val current: StateFlow<FileEntry?> = _current
-
-    val completed: StateFlow<List<FileEntry>> = dao.observeCompleted()
+    val entries: StateFlow<List<FileEntry>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _rootPicked = MutableStateFlow(settings.rootTreeUri != null)
@@ -32,10 +29,6 @@ class ReviewViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _rootRejectedMessage = MutableStateFlow<String?>(null)
     val rootRejectedMessage: StateFlow<String?> = _rootRejectedMessage
-
-    init {
-        settings.rootTreeUri?.let { loadNext() }
-    }
 
     fun onRootPicked(uri: Uri) {
         getApplication<Application>().contentResolver.takePersistableUriPermission(
@@ -54,7 +47,6 @@ class ReviewViewModel(app: Application) : AndroidViewModel(app) {
                 ScanResult.SUCCESS -> {
                     settings.rootTreeUri = uri.toString()
                     _rootPicked.value = true
-                    loadNext()
                 }
             }
         }
@@ -64,17 +56,14 @@ class ReviewViewModel(app: Application) : AndroidViewModel(app) {
         _rootRejectedMessage.value = null
     }
 
-    fun onDecision(entry: FileEntry, decision: Decision) {
+    /** Applies [decision] to every entry in [targets] at once — backs the gallery's multi-select action bar. */
+    fun setDecision(targets: List<FileEntry>, decision: Decision) {
         viewModelScope.launch {
-            dao.update(entry.copy(decision = decision, reviewedAt = System.currentTimeMillis()))
+            val now = System.currentTimeMillis()
+            targets.forEach { dao.update(it.copy(decision = decision, reviewedAt = now)) }
             if (decision == Decision.COMPRESS) {
                 CompressionForegroundService.start(getApplication())
             }
-            loadNext()
         }
-    }
-
-    private fun loadNext() {
-        viewModelScope.launch { _current.value = dao.nextForReview() }
     }
 }

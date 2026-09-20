@@ -2,9 +2,9 @@ package com.sharma2464.mediacompression.scan
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import com.sharma2464.mediacompression.data.AppDatabase
+import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.data.FileEntry
 import com.sharma2464.mediacompression.data.FileKind
 
@@ -17,8 +17,9 @@ class FolderScanner(private val context: Context) {
         val root = DocumentFile.fromTreeUri(context, rootTreeUri) ?: return ScanResult.ROOT_UNREADABLE
         if (isBackupFolder(root)) return ScanResult.REJECTED_BACKUP_FOLDER
 
+        val enabledKinds = AppSettings(context).enabledKinds
         val found = mutableListOf<FileEntry>()
-        walk(root, relativePath = "", found, backupDirName(root))
+        walk(root, relativePath = "", found, backupDirName(root), enabledKinds)
         AppDatabase.get(context).fileEntryDao().insertAll(found)
         return ScanResult.SUCCESS
     }
@@ -31,24 +32,36 @@ class FolderScanner(private val context: Context) {
      */
     private fun isBackupFolder(root: DocumentFile): Boolean {
         val name = root.name ?: return false
-        if (name.endsWith(BACKUP_SUFFIX) || name == LEGACY_BACKUP_DIR_NAME) return true
+        if (name.endsWith(BACKUP_SUFFIX) || name == LEGACY_BACKUP_DIR_NAME || name == ORIGINALS_DIR_NAME) return true
         if (!hasFullStorageAccess()) return false
         val real = resolveRealFile(root.uri) ?: return false
         return generateSequence(real) { it.parentFile }
-            .any { it.name.endsWith(BACKUP_SUFFIX) || it.name == LEGACY_BACKUP_DIR_NAME }
+            .any { it.name.endsWith(BACKUP_SUFFIX) || it.name == LEGACY_BACKUP_DIR_NAME || it.name == ORIGINALS_DIR_NAME }
     }
 
-    private fun walk(dir: DocumentFile, relativePath: String, out: MutableList<FileEntry>, backupDirName: String) {
+    private fun walk(
+        dir: DocumentFile,
+        relativePath: String,
+        out: MutableList<FileEntry>,
+        backupDirName: String,
+        enabledKinds: Set<FileKind>,
+    ) {
         for (child in dir.listFiles()) {
             val name = child.name ?: continue
-            if (relativePath.isEmpty() && (name == backupDirName || name == LEGACY_BACKUP_DIR_NAME)) continue // never index our own backups
+            // never index our own backups or default compressed-output destination
+            if (relativePath.isEmpty() &&
+                (name == backupDirName || name == LEGACY_BACKUP_DIR_NAME || name == ORIGINALS_DIR_NAME || name == DEFAULT_DESTINATION_DIR_NAME)
+            ) {
+                continue
+            }
             val childPath = if (relativePath.isEmpty()) name else "$relativePath/$name"
             if (child.isDirectory) {
-                walk(child, childPath, out, backupDirName)
+                walk(child, childPath, out, backupDirName, enabledKinds)
             } else {
                 val mime = child.type ?: guessMime(name)
                 val baseKind = classify(mime)
                 val kind = if (baseKind == FileKind.PHOTO && isMotionPhoto(child)) FileKind.LIVE_PHOTO else baseKind
+                if (kind !in enabledKinds) continue
                 out += FileEntry(
                     uri = child.uri.toString(),
                     relativePath = childPath,
@@ -62,43 +75,19 @@ class FolderScanner(private val context: Context) {
         }
     }
 
-    private fun guessMime(name: String): String {
-        val ext = name.substringAfterLast('.', "")
-        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
-    }
+    private fun guessMime(name: String): String = guessMimeType(name)
 
-    /**
-     * Cheap bounded sniff for Google Motion Photos: the XMP block with the
-     * `MotionPhoto`/`MicroVideoOffset` marker lives in the first few KB of the JPEG.
-     * ponytail: Apple Live Photo detection (matching `content.identifier` between a
-     * photo and a sibling .MOV) isn't wired in yet — tracked as a follow-up, since it
-     * needs parsing the QuickTime atom, not just a byte scan.
-     */
-    private fun isMotionPhoto(doc: DocumentFile): Boolean = runCatching {
-        context.contentResolver.openInputStream(doc.uri)?.use { input ->
-            val head = ByteArray(MOTION_PHOTO_SNIFF_BYTES)
-            val read = input.read(head)
-            if (read <= 0) return@use false
-            val text = String(head, 0, read, Charsets.ISO_8859_1)
-            text.contains("MotionPhoto") || text.contains("MicroVideo")
-        } ?: false
-    }.getOrDefault(false)
+    private fun isMotionPhoto(doc: DocumentFile): Boolean = isMotionPhotoDoc(context, doc)
 
-    private fun classify(mime: String): FileKind = when {
-        mime.startsWith("image/") -> FileKind.PHOTO
-        mime.startsWith("video/") -> FileKind.VIDEO
-        mime == "application/pdf" -> FileKind.PDF
-        mime.startsWith("text/") -> FileKind.TEXT
-        mime.contains("word") || mime.contains("sheet") || mime.contains("presentation") -> FileKind.DOCUMENT
-        else -> FileKind.OTHER
-    }
+    private fun classify(mime: String): FileKind = classifyFile(mime)
 
     companion object {
         const val BACKUP_SUFFIX = "_BACKUP"
+        const val DEFAULT_DESTINATION_DIR_NAME = "COMPRESSED"
+        const val ORIGINALS_DIR_NAME = "ORIGINALS"
         private const val LEGACY_BACKUP_DIR_NAME = "BACKUP"
-        private const val MOTION_PHOTO_SNIFF_BYTES = 64 * 1024
 
-        /** e.g. picking "DCIM" backs up under "DCIM_BACKUP" alongside it. */
+        /** Legacy naming (pre-[ORIGINALS_DIR_NAME]) — still skipped on scan so old backups aren't reviewed as content. */
         fun backupDirName(root: DocumentFile): String = "${root.name}$BACKUP_SUFFIX"
     }
 }

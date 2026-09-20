@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.sharma2464.mediacompression.settings
 
 import android.content.Intent
@@ -14,10 +16,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,10 +42,13 @@ import com.sharma2464.mediacompression.scan.ScanResult
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    onThemeModeChange: (ThemeMode) -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember { AppSettings(context) }
+    var themeMode by remember { mutableStateOf(settings.themeMode) }
     var mode by remember { mutableStateOf(settings.compressionMode) }
     var storageMode by remember { mutableStateOf(settings.storageMode) }
     var enabledKinds by remember { mutableStateOf(settings.enabledKinds) }
@@ -57,6 +66,31 @@ fun SettingsScreen() {
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Text("Appearance", style = MaterialTheme.typography.titleMedium)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            ThemeMode.entries.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = themeMode == option,
+                    onClick = {
+                        themeMode = option
+                        settings.themeMode = option
+                        onThemeModeChange(option)
+                    },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = ThemeMode.entries.size),
+                ) {
+                    Text(
+                        when (option) {
+                            ThemeMode.SYSTEM -> "Auto"
+                            ThemeMode.LIGHT -> "Light"
+                            ThemeMode.DARK -> "Dark"
+                        },
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 16.dp))
+
         Text("Compression mode", style = MaterialTheme.typography.titleMedium)
         CompressionMode.entries.forEach { option ->
             Row(

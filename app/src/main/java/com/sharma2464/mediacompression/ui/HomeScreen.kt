@@ -15,9 +15,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,7 +45,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sharma2464.mediacompression.compress.CompressionForegroundService
 import com.sharma2464.mediacompression.data.AppDatabase
 import com.sharma2464.mediacompression.data.Decision
@@ -50,8 +53,6 @@ import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.scan.BrowsableVolume
 import com.sharma2464.mediacompression.scan.guessMimeType
 import com.sharma2464.mediacompression.scan.listBrowsableVolumes
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,11 +69,11 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(
+    viewModel: FileBrowserViewModel,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
-    val viewModel: FileBrowserViewModel = viewModel {
-        FileBrowserViewModel(context)
-    }
     val volumes = remember { listBrowsableVolumes(context) }
     val pagerState = rememberPagerState(pageCount = { volumes.size })
     val scope = rememberCoroutineScope()
@@ -84,6 +85,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     val sortAscending by viewModel.sortAscending.collectAsState()
     val showDotFiles by viewModel.showDotFiles.collectAsState()
     val showEmptyDirs by viewModel.showEmptyDirs.collectAsState()
+    val loadState by viewModel.loadState.collectAsState()
 
     var showSortMenu by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
@@ -91,12 +93,14 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     val currentVolume = volumes.getOrNull(pagerState.currentPage)
     val currentDir = currentVolume?.let { currentPath[it.label] ?: it.rootDir }
 
-    LaunchedEffect(pagerState.currentPage) {
-        if (volumes.isNotEmpty()) {
-            viewModel.loadVolume(volumes, pagerState.currentPage)
+    LaunchedEffect(pagerState.currentPage, currentDir?.absolutePath) {
+        currentDir?.let {
+            viewModel.loadDirectoryAt(it)
             viewModel.clearSelected()
         }
     }
+
+    val listState = rememberLazyListState()
 
     Column(modifier = modifier.fillMaxSize()) {
         // Top app bar
@@ -187,12 +191,11 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // File list pager
-        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { pageIndex ->
-            val vol = volumes.getOrNull(pageIndex) ?: return@HorizontalPager
-            val dir = currentPath[vol.label] ?: vol.rootDir
-
-            Column(Modifier.fillMaxSize()) {
+        // File list (single LazyColumn — avoids nested HorizontalPager scroll jank)
+        val vol = currentVolume
+        Column(Modifier.weight(1f)) {
+            if (vol != null) {
+                val dir = currentPath[vol.label] ?: vol.rootDir
                 if (dir != vol.rootDir) {
                     Row(
                         Modifier
@@ -207,14 +210,39 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
-                LazyColumn(Modifier.weight(1f)) {
-                    items(entries, key = { it.file.absolutePath }) { entry ->
-                        BrowserRow(
-                            entry = entry,
-                            isSelected = selected.contains(entry.file),
-                            onToggleSelect = { viewModel.toggleSelected(entry.file) },
-                            onNavigateIn = { viewModel.navigateInto(entry.file, vol.label) },
+                when (val state = loadState) {
+                    is BrowserLoadState.Loading -> {
+                        BrowserLoadingContent(
+                            modifier = Modifier.weight(1f),
+                            title = state.message,
+                            subtitle = state.directoryName,
                         )
+                    }
+                    is BrowserLoadState.Scanning -> {
+                        BrowserLoadingContent(
+                            modifier = Modifier.weight(1f),
+                            title = "Scanning ${state.directoryName}…",
+                            subtitle = "${state.itemsFound} items",
+                        )
+                    }
+                    else -> {
+                        val selectedPaths = remember(selected) {
+                            selected.mapTo(HashSet()) { it.absolutePath }
+                        }
+                        LazyColumn(Modifier.weight(1f), state = listState) {
+                            items(
+                                entries,
+                                key = { it.file.absolutePath },
+                                contentType = { if (it.isDirectory) "dir" else "file" },
+                            ) { entry ->
+                                BrowserRow(
+                                    entry = entry,
+                                    isSelected = entry.file.absolutePath in selectedPaths,
+                                    onToggleSelect = { viewModel.toggleSelected(entry.file) },
+                                    onNavigateIn = { viewModel.navigateInto(entry.file, vol.label) },
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -236,39 +264,63 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun BrowserLoadingContent(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(48.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+@Composable
 private fun BrowserRow(
     entry: BrowserEntry,
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onNavigateIn: () -> Unit,
 ) {
-    val context = LocalContext.current
     val icon = if (entry.isDirectory) "📁" else kindIcon(entry.kind)
-
-    val metadataText = if (entry.isDirectory) {
-        val dirSize = Formatter.formatShortFileSize(context, entry.dirTotalSizeBytes)
-        val fileCount = entry.dirFileCount
-        "$dirSize • $fileCount ${if (fileCount == 1) "file" else "files"}"
-    } else {
-        val fileSize = Formatter.formatShortFileSize(context, entry.sizeBytes)
-        val fileType = entry.kind?.name ?: "FILE"
-        val dateText = formatTimeFromNow(entry.dateTakenMs)
-        listOfNotNull(fileSize, fileType, dateText.takeIf { it.isNotEmpty() }).joinToString(" • ")
-    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = entry.isDirectory) { onNavigateIn() }
-            .padding(horizontal = 8.dp, vertical = 12.dp),
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Checkbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
-        Text(icon, modifier = Modifier.padding(4.dp))
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp))
+                .clickable { onToggleSelect() },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isSelected) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+        }
+        Text(icon, modifier = Modifier.padding(2.dp))
         Column(Modifier.weight(1f)) {
             Text(entry.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(metadataText, style = MaterialTheme.typography.labelSmall)
+            Text(entry.subtitle, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

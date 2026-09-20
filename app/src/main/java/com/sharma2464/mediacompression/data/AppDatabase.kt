@@ -21,10 +21,19 @@ class Converters {
     fun toKind(value: String): FileKind = FileKind.valueOf(value)
 }
 
-@Database(entities = [FileEntry::class], version = 4, exportSchema = false)
+@Database(
+    entities = [
+        FileEntry::class,
+        CachedBrowserEntry::class,
+        DirectoryListingMeta::class,
+    ],
+    version = 5,
+    exportSchema = false,
+)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun fileEntryDao(): FileEntryDao
+    abstract fun browserCacheDao(): BrowserCacheDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null

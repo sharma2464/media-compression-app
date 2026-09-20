@@ -49,6 +49,7 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                 }
             }
         } finally {
+            settings.sessionDestinationTreeUri = null
             CompressionStatus.clear()
         }
         return Result.success()

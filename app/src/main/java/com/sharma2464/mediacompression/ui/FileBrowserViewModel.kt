@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sharma2464.mediacompression.data.AppDatabase
+import com.sharma2464.mediacompression.data.BrowserCache
 import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.scan.BrowsableVolume
 import com.sharma2464.mediacompression.scan.classifyFile
@@ -22,18 +24,35 @@ data class BrowserEntry(
     val sizeBytes: Long,
     val lastModified: Long,
     val kind: FileKind? = null,
-    val dirTotalSizeBytes: Long = 0L, // for directories: recursive size
-    val dirFileCount: Int = 0, // for directories: total file count (recursive)
-    val dateTakenMs: Long? = null, // for files: EXIF date taken, nullable
+    val dirTotalSizeBytes: Long = 0L,
+    val dirFileCount: Int = 0,
+    val dateTakenMs: Long? = null,
+    /** Precomputed list subtitle — avoids Formatter work during scroll. */
+    val subtitle: String = "",
 )
 
 enum class SortField { DATE_TAKEN, DATE_MODIFIED, SIZE, NAME, TYPE }
 
-class FileBrowserViewModel(private val context: Context) : ViewModel() {
+enum class BackAction { ClearSelection, NavigatedUp, GoToHomeTab, None }
+
+sealed class BrowserLoadState {
+    data object Idle : BrowserLoadState()
+    data class Loading(val directoryName: String, val message: String) : BrowserLoadState()
+    data class Scanning(val directoryName: String, val itemsFound: Int) : BrowserLoadState()
+    data class Ready(val fromCache: Boolean) : BrowserLoadState()
+}
+
+class FileBrowserViewModel(context: Context) : ViewModel() {
+    private val appContext = context.applicationContext
+    private val cache = BrowserCache(AppDatabase.get(context).browserCacheDao())
+
     private val _entries = MutableStateFlow<List<BrowserEntry>>(emptyList())
     val entries: StateFlow<List<BrowserEntry>> = _entries
 
-    private val _currentPath = MutableStateFlow<Map<String, File>>(emptyMap()) // per-volume index -> currentPath
+    private val _loadState = MutableStateFlow<BrowserLoadState>(BrowserLoadState.Idle)
+    val loadState: StateFlow<BrowserLoadState> = _loadState
+
+    private val _currentPath = MutableStateFlow<Map<String, File>>(emptyMap())
     val currentPath: StateFlow<Map<String, File>> = _currentPath
 
     private val _selected = MutableStateFlow<Set<File>>(emptySet())
@@ -42,8 +61,6 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
     private val _sortField = MutableStateFlow(SortField.SIZE)
     val sortField: StateFlow<SortField> = _sortField
 
-    // Descending by default: browsing to find large files worth compressing is the common
-    // case, so the biggest files/folders should be on top rather than the smallest.
     private val _sortAscending = MutableStateFlow(false)
     val sortAscending: StateFlow<Boolean> = _sortAscending
 
@@ -54,52 +71,134 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
     val showEmptyDirs: StateFlow<Boolean> = _showEmptyDirs
 
     private var allEntries: List<BrowserEntry> = emptyList()
+    private var activeDirectory: File? = null
+
+    private val _activeVolumeLabel = MutableStateFlow<String?>(null)
+    val activeVolumeLabel: StateFlow<String?> = _activeVolumeLabel
+
+    private val _activeVolumeRoot = MutableStateFlow<File?>(null)
+    val activeVolumeRoot: StateFlow<File?> = _activeVolumeRoot
+
+    val isScanning: Boolean
+        get() = _loadState.value is BrowserLoadState.Scanning
+
+    fun loadDirectoryAt(dir: File) {
+        loadDirectory(dir, forceRescan = false)
+    }
+
+    fun rescanCurrentDirectory() {
+        val dir = activeDirectory ?: return
+        if (_loadState.value is BrowserLoadState.Scanning) return
+        loadDirectory(dir, forceRescan = true)
+    }
 
     fun loadVolume(volumes: List<BrowsableVolume>, volumeIndex: Int) {
         if (volumeIndex !in volumes.indices) return
         val volume = volumes[volumeIndex]
-        val currentPath = _currentPath.value[volume.label] ?: volume.rootDir
-        loadDirectory(currentPath)
+        val dir = _currentPath.value[volume.label] ?: volume.rootDir
+        loadDirectory(dir, forceRescan = false)
     }
 
-    private fun loadDirectory(dir: File) {
+    private fun loadDirectory(dir: File, forceRescan: Boolean) {
+        activeDirectory = dir
         viewModelScope.launch(Dispatchers.IO) {
-            val entries = mutableListOf<BrowserEntry>()
-            dir.listFiles()?.forEach { file ->
-                if (file.isDirectory) {
-                    val (totalSize, fileCount) = computeDirMetadata(file)
-                    entries += BrowserEntry(
-                        file = file,
-                        name = file.name,
-                        isDirectory = true,
-                        sizeBytes = 0L,
-                        lastModified = file.lastModified(),
-                        kind = null,
-                        dirTotalSizeBytes = totalSize,
-                        dirFileCount = fileCount,
-                    )
-                } else {
-                    val mime = guessMimeType(file.name)
-                    val baseKind = classifyFile(mime)
-                    val kind = if (baseKind == FileKind.PHOTO && isMotionPhotoFile(file)) {
-                        FileKind.LIVE_PHOTO
-                    } else {
-                        baseKind
-                    }
-                    val dateTaken = getDateTakenMs(file, kind)
-                    entries += BrowserEntry(
-                        file = file,
-                        name = file.name,
-                        isDirectory = false,
-                        sizeBytes = file.length(),
-                        lastModified = file.lastModified(),
-                        kind = kind,
-                        dateTakenMs = dateTaken,
-                    )
+            _loadState.value = BrowserLoadState.Loading(
+                directoryName = dir.name.ifEmpty { dir.absolutePath },
+                message = if (forceRescan) "Rescanning…" else "Loading cached files…",
+            )
+            if (!forceRescan) {
+                val cached = cache.loadChildren(dir)
+                if (cached != null) {
+                    publishEntries(cached, fromCache = true)
+                    return@launch
                 }
             }
-            allEntries = entries
-            _entries.value = filterAndSort(entries)
+            scanAndCacheDirectory(dir)
+        }
+    }
+
+    private suspend fun scanAndCacheDirectory(dir: File) {
+        val dirName = dir.name.ifEmpty { dir.absolutePath }
+        _loadState.value = BrowserLoadState.Scanning(dirName, 0)
+        val entries = mutableListOf<BrowserEntry>()
+        val children = dir.listFiles() ?: emptyArray()
+        var processed = 0
+        for (file in children) {
+            entries += buildEntry(file)
+            processed++
+            if (processed % 50 == 0) {
+                _loadState.value = BrowserLoadState.Scanning(dirName, processed)
+            }
+        }
+        cache.saveListing(dir, entries)
+        publishEntries(entries, fromCache = false)
+    }
+
+    private suspend fun publishEntries(entries: List<BrowserEntry>, fromCache: Boolean) {
+        allEntries = entries
+        emitEntries(filterAndSort(entries))
+        _loadState.value = BrowserLoadState.Ready(fromCache)
+    }
+
+    private fun emitEntries(list: List<BrowserEntry>) {
+        _entries.value = list.map { entry -> enrichForDisplay(entry) }
+    }
+
+    private fun buildEntry(file: File): BrowserEntry {
+        if (file.isDirectory) {
+            val (totalSize, fileCount) = computeDirMetadata(file)
+            return BrowserEntry(
+                file = file,
+                name = file.name,
+                isDirectory = true,
+                sizeBytes = 0L,
+                lastModified = file.lastModified(),
+                kind = null,
+                dirTotalSizeBytes = totalSize,
+                dirFileCount = fileCount,
+            )
+        }
+        val mime = guessMimeType(file.name)
+        val baseKind = classifyFile(mime)
+        val kind = if (baseKind == FileKind.PHOTO && isMotionPhotoFile(file)) {
+            FileKind.LIVE_PHOTO
+        } else {
+            baseKind
+        }
+        return BrowserEntry(
+            file = file,
+            name = file.name,
+            isDirectory = false,
+            sizeBytes = file.length(),
+            lastModified = file.lastModified(),
+            kind = kind,
+            dateTakenMs = null,
+        )
+    }
+
+    private fun fillExifDatesIfNeeded() {
+        val needsExif = allEntries.any {
+            !it.isDirectory &&
+                (it.kind == FileKind.PHOTO || it.kind == FileKind.LIVE_PHOTO) &&
+                it.dateTakenMs == null
+        }
+        if (!needsExif) return
+        viewModelScope.launch(Dispatchers.IO) {
+            var anyChanged = false
+            val updated = allEntries.map { entry ->
+                if (entry.isDirectory || entry.dateTakenMs != null) return@map entry
+                val kind = entry.kind
+                if (kind != FileKind.PHOTO && kind != FileKind.LIVE_PHOTO) return@map entry
+                val taken = getDateTakenMs(entry.file, kind) ?: return@map entry
+                anyChanged = true
+                entry.copy(dateTakenMs = taken)
+            }
+            if (!anyChanged) return@launch
+            allEntries = updated
+            val withDates = updated.map { enrichForDisplay(it) }
+            allEntries = withDates
+            emitEntries(filterAndSort(withDates))
+            activeDirectory?.let { dir -> cache.saveListing(dir, allEntries) }
         }
     }
 
@@ -113,20 +212,20 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
 
     fun toggleShowDotFiles() {
         _showDotFiles.value = !_showDotFiles.value
-        _entries.value = filterAndSort(allEntries)
+        emitEntries(filterAndSort(allEntries))
     }
 
     fun toggleShowEmptyDirs() {
         _showEmptyDirs.value = !_showEmptyDirs.value
-        _entries.value = filterAndSort(allEntries)
+        emitEntries(filterAndSort(allEntries))
     }
 
     private fun computeDirMetadata(dir: File): Pair<Long, Int> {
         var totalSize = 0L
         var fileCount = 0
-        dir.walk().forEach { file ->
-            if (file.isFile) {
-                totalSize += file.length()
+        dir.walk().forEach { f ->
+            if (f.isFile) {
+                totalSize += f.length()
                 fileCount++
             }
         }
@@ -148,7 +247,7 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
                             java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'").apply {
                                 timeZone = java.util.TimeZone.getTimeZone("UTC")
                             }.parse(iso)?.time
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             null
                         }
                     } else {
@@ -163,7 +262,6 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
         val updated = _currentPath.value.toMutableMap()
         updated[volumeLabel] = file
         _currentPath.value = updated
-        loadDirectory(file)
     }
 
     fun navigateUp(volumeLabel: String, volumeRootDir: File) {
@@ -173,14 +271,62 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
         navigateInto(parent, volumeLabel)
     }
 
+    fun setActiveVolume(volumeLabel: String, volumeRootDir: File) {
+        _activeVolumeLabel.value = volumeLabel
+        _activeVolumeRoot.value = volumeRootDir
+    }
+
+    fun openAtVolumePath(volumeLabel: String, volumeRoot: File, dir: File) {
+        setActiveVolume(volumeLabel, volumeRoot)
+        val updated = _currentPath.value.toMutableMap()
+        updated[volumeLabel] = dir
+        _currentPath.value = updated
+        loadDirectoryAt(dir)
+    }
+
+    fun isAtVolumeRoot(): Boolean {
+        val label = _activeVolumeLabel.value ?: return true
+        val root = _activeVolumeRoot.value ?: return true
+        val current = _currentPath.value[label] ?: root
+        return current == root
+    }
+
+    /** First back action for the Files tab when selection is already empty. */
+    fun handleFilesTabBack(): BackAction {
+        if (_selected.value.isNotEmpty()) return BackAction.ClearSelection
+        if (!isAtVolumeRoot()) {
+            val label = _activeVolumeLabel.value
+            val root = _activeVolumeRoot.value
+            if (label != null && root != null) navigateUp(label, root)
+            return BackAction.NavigatedUp
+        }
+        return BackAction.None
+    }
+
+    fun deleteSelected() {
+        val toDelete = _selected.value.toList()
+        if (toDelete.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            toDelete.forEach { file ->
+                if (file.isDirectory) file.deleteRecursively() else file.delete()
+            }
+            _selected.value = emptySet()
+            val dir = activeDirectory
+            if (dir != null) {
+                loadDirectory(dir, forceRescan = true)
+            }
+        }
+    }
+
     fun setSortField(field: SortField) {
         _sortField.value = field
-        _entries.value = filterAndSort(allEntries)
+        emitEntries(filterAndSort(allEntries))
+        if (field == SortField.DATE_TAKEN) fillExifDatesIfNeeded()
     }
 
     fun toggleSortDirection() {
         _sortAscending.value = !_sortAscending.value
-        _entries.value = filterAndSort(allEntries)
+        emitEntries(filterAndSort(allEntries))
     }
 
     fun toggleSelected(file: File) {
@@ -193,8 +339,17 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
         _selected.value = updated
     }
 
+    fun toggleSelectedByPath(path: String) = toggleSelected(File(path))
+
+    fun navigateIntoPath(path: String, volumeLabel: String) = navigateInto(File(path), volumeLabel)
+
     fun clearSelected() {
         _selected.value = emptySet()
+    }
+
+    private fun enrichForDisplay(entry: BrowserEntry): BrowserEntry {
+        if (entry.subtitle.isNotEmpty()) return entry
+        return entry.copy(subtitle = formatBrowserEntrySubtitle(appContext, entry))
     }
 
     private fun sortEntries(entries: List<BrowserEntry>): List<BrowserEntry> {
@@ -212,9 +367,6 @@ class FileBrowserViewModel(private val context: Context) : ViewModel() {
             SortField.TYPE -> files.sortedBy { it.kind?.ordinal ?: -1 }
         }
 
-        // Reverse each group independently (not the concatenated list) so folders always stay
-        // above files regardless of sort direction — reversing the whole list would push
-        // folders below files whenever descending order is selected.
         val orderedDirs = if (asc) sortedDirs else sortedDirs.reversed()
         val orderedFiles = if (asc) sortedFiles else sortedFiles.reversed()
         return orderedDirs + orderedFiles

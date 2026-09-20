@@ -174,6 +174,11 @@ class CompressionPipeline(private val context: Context) {
     // SAF pipeline uses via resolveDestinationRoot() — real-file mode must honor it too,
     // rather than silently falling back to a sibling COMPRESSED/ folder next to the source.
     private fun resolveRealDestinationDir(sourceFile: File): File {
+        settings.sessionDestinationTreeUri?.let { uriStr ->
+            if (hasFullStorageAccess()) {
+                resolveRealFile(Uri.parse(uriStr))?.let { return it }
+            }
+        }
         settings.destinationTreeUri?.let { uriStr ->
             if (hasFullStorageAccess()) {
                 resolveRealFile(Uri.parse(uriStr))?.let { return it }
@@ -201,6 +206,9 @@ class CompressionPipeline(private val context: Context) {
     }
 
     private fun resolveDestinationRoot(sourceRoot: DocumentFile): DocumentFile {
+        settings.sessionDestinationTreeUri?.let { uri ->
+            DocumentFile.fromTreeUri(context, Uri.parse(uri))?.let { return it }
+        }
         settings.destinationTreeUri?.let { uri ->
             DocumentFile.fromTreeUri(context, Uri.parse(uri))?.let { return it }
         }

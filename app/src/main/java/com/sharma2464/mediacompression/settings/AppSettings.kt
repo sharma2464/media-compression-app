@@ -15,6 +15,8 @@ enum class CompressionMode { LOSSLESS_ONLY, ADAPTIVE }
  */
 enum class StorageMode { COMPRESSED_COPY, REPLACE_IN_PLACE }
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 /** Groups [FileKind]s under one user-facing toggle (photos cover both stills and motion photos). */
 enum class FeatureGroup(val label: String, val kinds: Set<FileKind>) {
     PHOTOS("Photos", setOf(FileKind.PHOTO, FileKind.LIVE_PHOTO)),
@@ -39,6 +41,9 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_DESTINATION_URI, null)
         set(value) = prefs.edit { putString(KEY_DESTINATION_URI, value) }
 
+    /** Per-batch override from compress preview; not persisted. */
+    var sessionDestinationTreeUri: String? = null
+
     var compressionMode: CompressionMode
         get() = CompressionMode.valueOf(
             prefs.getString(KEY_MODE, CompressionMode.ADAPTIVE.name) ?: CompressionMode.ADAPTIVE.name,
@@ -58,11 +63,18 @@ class AppSettings(context: Context) {
             ?: FileKind.entries.toSet()
         set(value) = prefs.edit { putStringSet(KEY_ENABLED_KINDS, value.map { it.name }.toSet()) }
 
+    var themeMode: ThemeMode
+        get() = ThemeMode.valueOf(
+            prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name,
+        )
+        set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
+
     companion object {
         private const val KEY_ROOT_URI = "root_tree_uri"
         private const val KEY_DESTINATION_URI = "destination_tree_uri"
         private const val KEY_MODE = "compression_mode"
         private const val KEY_STORAGE_MODE = "storage_mode"
         private const val KEY_ENABLED_KINDS = "enabled_kinds"
+        private const val KEY_THEME_MODE = "theme_mode"
     }
 }

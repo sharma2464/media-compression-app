@@ -33,6 +33,14 @@ data class BrowserEntry(
 
 enum class SortField { DATE_TAKEN, DATE_MODIFIED, SIZE, NAME, TYPE }
 
+fun SortField.displayLabel(): String = when (this) {
+    SortField.DATE_TAKEN -> "Date taken"
+    SortField.DATE_MODIFIED -> "Date modified"
+    SortField.SIZE -> "Size"
+    SortField.NAME -> "Name"
+    SortField.TYPE -> "Type"
+}
+
 enum class BackAction { ClearSelection, NavigatedUp, GoToHomeTab, None }
 
 sealed class BrowserLoadState {

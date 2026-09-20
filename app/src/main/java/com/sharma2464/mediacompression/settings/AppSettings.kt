@@ -2,6 +2,8 @@ package com.sharma2464.mediacompression.settings
 
 import android.content.Context
 import androidx.core.content.edit
+import com.sharma2464.mediacompression.compress.CompressJobSettings
+import com.sharma2464.mediacompression.compress.CompressionStrength
 import com.sharma2464.mediacompression.data.FileKind
 
 enum class CompressionMode { LOSSLESS_ONLY, ADAPTIVE }
@@ -44,6 +46,18 @@ class AppSettings(context: Context) {
     /** Per-batch override from compress preview; not persisted. */
     var sessionDestinationTreeUri: String? = null
 
+    /** Per-batch strength from compress preview; not persisted. */
+    var sessionCompressionStrength: CompressionStrength? = null
+
+    /** Per-batch compress UI settings; not persisted. */
+    var sessionCompressJobSettings: CompressJobSettings? = null
+
+    var compressionStrength: CompressionStrength
+        get() = CompressionStrength.valueOf(
+            prefs.getString(KEY_STRENGTH, CompressionStrength.BALANCED.name) ?: CompressionStrength.BALANCED.name,
+        )
+        set(value) = prefs.edit { putString(KEY_STRENGTH, value.name) }
+
     var compressionMode: CompressionMode
         get() = CompressionMode.valueOf(
             prefs.getString(KEY_MODE, CompressionMode.ADAPTIVE.name) ?: CompressionMode.ADAPTIVE.name,
@@ -73,6 +87,7 @@ class AppSettings(context: Context) {
         private const val KEY_ROOT_URI = "root_tree_uri"
         private const val KEY_DESTINATION_URI = "destination_tree_uri"
         private const val KEY_MODE = "compression_mode"
+        private const val KEY_STRENGTH = "compression_strength"
         private const val KEY_STORAGE_MODE = "storage_mode"
         private const val KEY_ENABLED_KINDS = "enabled_kinds"
         private const val KEY_THEME_MODE = "theme_mode"

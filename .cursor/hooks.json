@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/android-edit-tab.sh",
+        "matcher": "TabWrite",
+        "timeout": 300
+      },
+      {
+        "command": ".cursor/hooks/android-edit-mark.sh",
+        "matcher": "Write",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/android-edit-install-stop.sh",
+        "timeout": 300
+      }
+    ]
+  }
+}

@@ -24,6 +24,16 @@ class CompressionPipeline(private val context: Context) {
     private val settings = AppSettings(context)
     private val dao = AppDatabase.get(context).fileEntryDao()
 
+    private fun profileFor(entry: FileEntry, localFile: File): CompressionProfile {
+        val job = settings.sessionCompressJobSettings ?: CompressJobSettings.DEFAULT
+        val meta = if (entry.kind == FileKind.VIDEO) {
+            VideoMetadataProbe.probe(localFile)
+        } else {
+            null
+        }
+        return CompressSettingsMapper.toProfile(settings.compressionMode, job, meta)
+    }
+
     suspend fun process(entry: FileEntry, onProgress: (Int) -> Unit = {}) {
         val entryUri = Uri.parse(entry.uri)
 
@@ -33,13 +43,14 @@ class CompressionPipeline(private val context: Context) {
         val inputDir = File(context.cacheDir, "compress_work/in").apply { mkdirs() }
         val workDir = File(context.cacheDir, "compress_work/out").apply { mkdirs() }
         val localCopy = File(inputDir, entry.displayName)
+        val stagingTotal = entry.sizeBytes.coerceAtLeast(1L)
 
         // Source can be either SAF (content://) or real file (file://)
         if (entryUri.scheme == "file") {
             val sourceFile = File(entryUri.path!!)
             if (!sourceFile.exists() || !sourceFile.canRead()) return
-            sourceFile.inputStream().use { input ->
-                localCopy.outputStream().use { input.copyTo(it) }
+            copyFileWithProgress(sourceFile, localCopy) { pct ->
+                onProgress(CompressionProgressPhases.stagingPercent(stagingTotal * pct / 100, stagingTotal))
             }
             processRealFile(entry, sourceFile, localCopy, workDir, onProgress)
         } else {
@@ -48,7 +59,11 @@ class CompressionPipeline(private val context: Context) {
             val root = DocumentFile.fromTreeUri(context, rootUri) ?: return
             val sourceDoc = findByRelativePath(root, entry.relativePath) ?: return
             context.contentResolver.openInputStream(sourceDoc.uri)!!.use { input ->
-                localCopy.outputStream().use { input.copyTo(it) }
+                localCopy.outputStream().use { output ->
+                    copyStreamWithProgress(input, output, stagingTotal) { pct ->
+                        onProgress(CompressionProgressPhases.stagingPercent(stagingTotal * pct / 100, stagingTotal))
+                    }
+                }
             }
             processSafFile(entry, root, sourceDoc, localCopy, workDir, onProgress)
         }
@@ -67,16 +82,20 @@ class CompressionPipeline(private val context: Context) {
             backupOriginal(root, entry.relativePath, localCopy)
         }
 
+        val profile = profileFor(entry, localCopy)
         val compressor = compressorFor(entry.kind)
-        val result = compressor.compress(localCopy, settings.compressionMode, workDir, onProgress)
+        val result = compressor.compress(localCopy, profile, workDir) { enc ->
+            onProgress(CompressionProgressPhases.compressPercent(enc))
+        }
         val newName = result.outputFile.name
+        val saveTotal = result.outputFile.length().coerceAtLeast(1L)
 
         val destinationFile = when (settings.storageMode) {
             StorageMode.REPLACE_IN_PLACE -> {
                 backupRealFile(File(entry.relativePath), localCopy)
                 File(File(entry.relativePath).parent ?: return, newName).apply {
-                    result.outputFile.inputStream().use { input ->
-                        this.outputStream().use { input.copyTo(it) }
+                    copyFileWithProgress(result.outputFile, this) { pct ->
+                        onProgress(CompressionProgressPhases.savingPercent(saveTotal * pct / 100, saveTotal))
                     }
                 }
             }
@@ -84,17 +103,14 @@ class CompressionPipeline(private val context: Context) {
                 val compressedDir = File(File(entry.relativePath).parent ?: return, "COMPRESSED")
                 compressedDir.mkdirs()
                 File(compressedDir, newName).apply {
-                    result.outputFile.inputStream().use { input ->
-                        this.outputStream().use { input.copyTo(it) }
+                    copyFileWithProgress(result.outputFile, this) { pct ->
+                        onProgress(CompressionProgressPhases.savingPercent(saveTotal * pct / 100, saveTotal))
                     }
                 }
             }
         }
 
-        // Restore original timestamp
-        if (hasFullStorageAccess()) {
-            runCatching { destinationFile.setLastModified(entry.lastModified) }
-        }
+        MediaMetadataPreserver.restoreFilesystemTimestamps(localCopy, destinationFile)
 
         dao.update(
             entry.copy(
@@ -126,15 +142,19 @@ class CompressionPipeline(private val context: Context) {
             backupRealFile(sourceFile, localCopy)
         }
 
+        val profile = profileFor(entry, localCopy)
         val compressor = compressorFor(entry.kind)
-        val result = compressor.compress(localCopy, settings.compressionMode, workDir, onProgress)
+        val result = compressor.compress(localCopy, profile, workDir) { enc ->
+            onProgress(CompressionProgressPhases.compressPercent(enc))
+        }
         val newName = result.outputFile.name
+        val saveTotal = result.outputFile.length().coerceAtLeast(1L)
 
         val destinationFile = when (storageMode) {
             StorageMode.REPLACE_IN_PLACE -> {
                 File(sourceFile.parent ?: return, newName).apply {
-                    result.outputFile.inputStream().use { input ->
-                        this.outputStream().use { input.copyTo(it) }
+                    copyFileWithProgress(result.outputFile, this) { pct ->
+                        onProgress(CompressionProgressPhases.savingPercent(saveTotal * pct / 100, saveTotal))
                     }
                 }
             }
@@ -142,16 +162,14 @@ class CompressionPipeline(private val context: Context) {
                 val compressedDir = resolveRealDestinationDir(sourceFile)
                 compressedDir.mkdirs()
                 File(compressedDir, newName).apply {
-                    result.outputFile.inputStream().use { input ->
-                        this.outputStream().use { input.copyTo(it) }
+                    copyFileWithProgress(result.outputFile, this) { pct ->
+                        onProgress(CompressionProgressPhases.savingPercent(saveTotal * pct / 100, saveTotal))
                     }
                 }
             }
         }
 
-        if (hasFullStorageAccess()) {
-            runCatching { destinationFile.setLastModified(entry.lastModified) }
-        }
+        MediaMetadataPreserver.restoreFilesystemTimestamps(localCopy, destinationFile)
 
         dao.update(
             entry.copy(

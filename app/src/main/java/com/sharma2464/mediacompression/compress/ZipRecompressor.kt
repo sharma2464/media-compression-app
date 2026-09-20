@@ -1,6 +1,5 @@
 package com.sharma2464.mediacompression.compress
 
-import com.sharma2464.mediacompression.settings.CompressionMode
 import java.io.File
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
@@ -13,7 +12,7 @@ import java.util.zip.ZipOutputStream
  * Lossy re-encoding doesn't apply here, so both modes behave the same.
  */
 class ZipRecompressor : Compressor {
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
+    override suspend fun compress(input: File, profile: CompressionProfile, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val output = File(workDir, input.name)
         ZipFile(input).use { zip ->
             ZipOutputStream(output.outputStream()).use { out ->

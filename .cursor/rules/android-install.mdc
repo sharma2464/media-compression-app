@@ -1,0 +1,17 @@
+---
+description: Build and install debug APK after Android app changes
+globs: app/**/*
+alwaysApply: false
+---
+
+# Android build and install
+
+After changing Android app code or Gradle config (`app/src/**`, `app/build.gradle.kts`, root `build.gradle.kts`, `settings.gradle.kts`), run from the project root:
+
+```bash
+./gradlew installDebug
+```
+
+Do this before you finish the turn when those files were modified. A project `stop` hook also runs `installDebug` after agent edits; still run it yourself if hooks are disabled or the install failed.
+
+Requires a device or emulator connected (`adb devices`).

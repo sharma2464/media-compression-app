@@ -5,9 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.sharma2464.mediacompression.MediaCompressionApp
 
 /** Hosts the long-running compression WorkManager job with a visible progress notification. */
@@ -16,11 +13,7 @@ class CompressionForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("Starting compression…"))
-        WorkManager.getInstance(this).enqueueUniqueWork(
-            CompressionWorker.WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            OneTimeWorkRequestBuilder<CompressionWorker>().build(),
-        )
+        // Work is enqueued from [enqueueCompression] with strength in input data.
         return START_NOT_STICKY
     }
 

@@ -12,8 +12,8 @@ android {
         applicationId = "com.sharma2464.mediacompression"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "3600000"
     }
@@ -71,6 +71,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.0")
     implementation("androidx.media3:media3-ui:1.4.0")
     implementation("androidx.media3:media3-transformer:1.4.0")
+    implementation("androidx.media3:media3-effect:1.4.0")
+
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7")
+    implementation("com.arthenica:smart-exception-java:0.2.1")
 
     // PDF stream recompression (no native Android write API for this)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")

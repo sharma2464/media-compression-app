@@ -1,6 +1,5 @@
 package com.sharma2464.mediacompression.compress
 
-import com.sharma2464.mediacompression.settings.CompressionMode
 import java.io.File
 
 data class CompressionResult(val outputFile: File, val wasLossless: Boolean)
@@ -16,7 +15,7 @@ data class CompressionResult(val outputFile: File, val wasLossless: Boolean)
 interface Compressor {
     suspend fun compress(
         input: File,
-        mode: CompressionMode,
+        profile: CompressionProfile,
         workDir: File,
         onProgress: (Int) -> Unit = {},
     ): CompressionResult

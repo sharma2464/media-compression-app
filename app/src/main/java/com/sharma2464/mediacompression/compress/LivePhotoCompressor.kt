@@ -20,9 +20,9 @@ import java.io.File
  * implemented yet — both still pass through unchanged. Tracked in issue #15.
  */
 class LivePhotoCompressor(private val context: Context) : Compressor {
-    override suspend fun compress(input: File, mode: CompressionMode, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
+    override suspend fun compress(input: File, profile: CompressionProfile, workDir: File, onProgress: (Int) -> Unit): CompressionResult {
         val passthrough = { copyThrough(input, workDir) }
-        if (mode == CompressionMode.LOSSLESS_ONLY) return passthrough()
+        if (profile.mode == CompressionMode.LOSSLESS_ONLY) return passthrough()
 
         val bytes = input.readBytes()
         val ref = MotionPhotoSplicer.findVideoLength(bytes) ?: return passthrough()
@@ -30,7 +30,7 @@ class LivePhotoCompressor(private val context: Context) : Compressor {
         val (primary, video) = MotionPhotoSplicer.split(bytes, videoLength) ?: return passthrough()
 
         val videoFile = File(workDir, "${input.nameWithoutExtension}_embedded.mp4").apply { writeBytes(video) }
-        val compressedVideo = runCatching { VideoCompressor(context).compress(videoFile, mode, workDir) }
+        val compressedVideo = runCatching { VideoCompressor(context).compress(videoFile, profile, workDir) }
             .getOrNull() ?: return passthrough()
         val newVideoBytes = compressedVideo.outputFile.readBytes()
         videoFile.delete()

@@ -2,6 +2,7 @@ package com.sharma2464.mediacompression.compress
 
 import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.settings.CompressionMode
+import com.sharma2464.mediacompression.compress.CompressionStrength
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,7 +15,7 @@ class CompressionEstimatorTest {
         val file = tempFile(sizeBytes = 1_000_000)
         val estimated = CompressionEstimator.estimatedBytesAfter(file, FileKind.VIDEO, CompressionMode.ADAPTIVE)
         assertTrue(estimated < 1_000_000)
-        assertEquals(550_000L, estimated)
+        assertEquals(540_000L, estimated)
         file.delete()
     }
 
@@ -31,7 +32,7 @@ class CompressionEstimatorTest {
         val a = tempFile(sizeBytes = 1000)
         val b = tempFile(sizeBytes = 2000)
         val pairs = listOf(Pair(a, FileKind.VIDEO), Pair(b, FileKind.PHOTO))
-        val total = CompressionEstimator.estimatedBytesAfter(pairs, CompressionMode.ADAPTIVE)
+        val total = CompressionEstimator.estimatedBytesAfter(pairs, CompressionMode.ADAPTIVE, CompressionStrength.BALANCED)
         val expected = CompressionEstimator.estimatedBytesAfter(a, FileKind.VIDEO, CompressionMode.ADAPTIVE) +
             CompressionEstimator.estimatedBytesAfter(b, FileKind.PHOTO, CompressionMode.ADAPTIVE)
         assertEquals(expected, total)

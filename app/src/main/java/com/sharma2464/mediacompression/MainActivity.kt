@@ -16,7 +16,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -52,9 +57,9 @@ import com.sharma2464.mediacompression.ui.WelcomeScreen
 import com.sharma2464.mediacompression.ui.buildCompressPreviewState
 import com.sharma2464.mediacompression.ui.theme.MediaCompressionTheme
 
-private enum class Tab(val label: String, val glyph: String) {
-    HOME("Files", "📁"),
-    SETTINGS("Settings", "⚙️"),
+private enum class Tab(val label: String) {
+    HOME("Files"),
+    SETTINGS("Settings"),
 }
 
 class MainActivity : ComponentActivity() {
@@ -150,6 +155,78 @@ class MainActivity : ComponentActivity() {
                             },
                         )
                     } else {
+                        Box(Modifier.fillMaxSize()) {
+                        Scaffold(
+                            bottomBar = {
+                                NavigationBar {
+                                    Tab.entries.forEach { t ->
+                                        NavigationBarItem(
+                                            selected = tab == t,
+                                            onClick = { tab = t },
+                                            icon = {
+                                                Icon(
+                                                    when (t) {
+                                                        Tab.HOME -> Icons.Default.Folder
+                                                        Tab.SETTINGS -> Icons.Default.Settings
+                                                    },
+                                                    contentDescription = t.label,
+                                                )
+                                            },
+                                            label = { Text(t.label) },
+                                        )
+                                    }
+                                }
+                            },
+                            floatingActionButton = {
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    if (compressionBatch != null) {
+                                        CompressionProgressFab(
+                                            onOpenProgressDialog = {
+                                                compressDialogStage = CompressDialogStage.Progress
+                                                compressDialogVisible = true
+                                            },
+                                        )
+                                    }
+                                    if (tab == Tab.HOME && selected.isEmpty()) {
+                                        RescanFab(
+                                            isScanning = isScanning,
+                                            onRescan = { fileBrowserViewModel.rescanCurrentDirectory() },
+                                        )
+                                    }
+                                }
+                            },
+                        ) { padding ->
+                            Box(Modifier.padding(padding).fillMaxSize()) {
+                                when (tab) {
+                                    Tab.HOME -> HomeScreen(
+                                        viewModel = fileBrowserViewModel,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    Tab.SETTINGS -> SettingsScreen(
+                                        onThemeModeChange = { themeMode = it },
+                                    )
+                                }
+                                if (tab == Tab.HOME && selected.isNotEmpty()) {
+                                    SelectionActionFab(
+                                        selected = selected,
+                                        onCompressClick = {
+                                            compressPreviewState = buildCompressPreviewState(context, selected)
+                                            compressDialogStage = CompressDialogStage.Preview
+                                            compressDialogVisible = true
+                                        },
+                                        onDeleteConfirmed = { fileBrowserViewModel.deleteSelected() },
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
+                        }
+
                         CompressionBatchDialog(
                             visible = compressDialogVisible,
                             stage = compressDialogStage,
@@ -169,63 +246,6 @@ class MainActivity : ComponentActivity() {
                                 fileBrowserViewModel.clearSelected()
                             },
                         )
-
-                        Scaffold(
-                            bottomBar = {
-                                NavigationBar {
-                                    Tab.entries.forEach { t ->
-                                        NavigationBarItem(
-                                            selected = tab == t,
-                                            onClick = { tab = t },
-                                            icon = { Text(t.glyph) },
-                                            label = { Text(t.label) },
-                                        )
-                                    }
-                                }
-                            },
-                            floatingActionButton = {
-                                Column(
-                                    horizontalAlignment = Alignment.End,
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    if (compressionBatch != null) {
-                                        CompressionProgressFab(
-                                            onOpenProgressDialog = {
-                                                compressDialogStage = CompressDialogStage.Progress
-                                                compressDialogVisible = true
-                                            },
-                                        )
-                                    }
-                                    if (tab == Tab.HOME && selected.isNotEmpty()) {
-                                        SelectionActionFab(
-                                            selected = selected,
-                                            onCompressClick = {
-                                                compressPreviewState = buildCompressPreviewState(context, selected)
-                                                compressDialogStage = CompressDialogStage.Preview
-                                                compressDialogVisible = true
-                                            },
-                                            onDeleteConfirmed = { fileBrowserViewModel.deleteSelected() },
-                                        )
-                                    } else if (tab == Tab.HOME) {
-                                        RescanFab(
-                                            isScanning = isScanning,
-                                            onRescan = { fileBrowserViewModel.rescanCurrentDirectory() },
-                                        )
-                                    }
-                                }
-                            },
-                        ) { padding ->
-                            Box(Modifier.padding(padding).fillMaxSize()) {
-                                when (tab) {
-                                    Tab.HOME -> HomeScreen(
-                                        viewModel = fileBrowserViewModel,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                    Tab.SETTINGS -> SettingsScreen(
-                                        onThemeModeChange = { themeMode = it },
-                                    )
-                                }
-                            }
                         }
                     }
                 }

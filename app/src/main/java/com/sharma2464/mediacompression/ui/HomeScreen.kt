@@ -48,10 +48,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.SwapVert
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -75,10 +75,13 @@ fun HomeScreen(
     val loadState by viewModel.loadState.collectAsState()
 
     var showSortMenu by remember { mutableStateOf(false) }
-    var showFilterMenu by remember { mutableStateOf(false) }
+    var showViewOptionsMenu by remember { mutableStateOf(false) }
 
     val currentVolume = volumes.getOrNull(pagerState.currentPage)
     val currentDir = currentVolume?.let { currentPath[it.label] ?: it.rootDir }
+    val volLabel = currentVolume?.label
+    val volRoot = currentVolume?.rootDir
+    val canNavigateUp = volLabel != null && volRoot != null && currentDir != volRoot
 
     LaunchedEffect(pagerState.currentPage, currentDir?.absolutePath) {
         currentDir?.let {
@@ -99,19 +102,75 @@ fun HomeScreen(
     Column(modifier = modifier.fillMaxSize()) {
         // Top app bar
         TopAppBar(
+            navigationIcon = {
+                if (canNavigateUp && volLabel != null && volRoot != null) {
+                    IconButton(onClick = { viewModel.navigateUp(volLabel, volRoot) }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Navigate up")
+                    }
+                }
+            },
             title = {
-                Text(
-                    currentDir?.name ?: currentVolume?.label ?: "Files",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column {
+                    val titleText = when {
+                        currentDir == null -> currentVolume?.label ?: "Files"
+                        currentDir.name.isNotEmpty() -> currentDir.name
+                        else -> currentVolume?.label ?: "Files"
+                    }
+                    Text(
+                        titleText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (canNavigateUp && currentVolume != null) {
+                        Text(
+                            currentVolume.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             },
             actions = {
                 Box {
-                    IconButton(onClick = { showFilterMenu = !showFilterMenu }) {
-                        Icon(Icons.Default.Menu, contentDescription = "View options")
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(Icons.Default.SwapVert, contentDescription = "Sort")
                     }
-                    DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        SortField.entries.forEach { field ->
+                            DropdownMenuItem(
+                                text = { Text(field.displayLabel()) },
+                                leadingIcon = {
+                                    if (sortField == field) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortField(field)
+                                    showSortMenu = false
+                                },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (sortAscending) "Ascending" else "Descending")
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = { viewModel.toggleSortDirection() },
+                        )
+                    }
+                }
+                Box {
+                    IconButton(onClick = { showViewOptionsMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                    }
+                    DropdownMenu(expanded = showViewOptionsMenu, onDismissRequest = { showViewOptionsMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("Show hidden files") },
                             leadingIcon = { if (showDotFiles) Icon(Icons.Default.Check, contentDescription = null) },
@@ -121,49 +180,6 @@ fun HomeScreen(
                             text = { Text("Show empty folders") },
                             leadingIcon = { if (showEmptyDirs) Icon(Icons.Default.Check, contentDescription = null) },
                             onClick = { viewModel.toggleShowEmptyDirs() },
-                        )
-                    }
-                }
-                val volLabel = currentVolume?.label
-                val volRoot = currentVolume?.rootDir
-                IconButton(onClick = {
-                    if (volLabel != null && volRoot != null && currentDir != volRoot) {
-                        viewModel.navigateUp(volLabel, volRoot)
-                    }
-                }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Navigate up")
-                }
-                Box {
-                    IconButton(onClick = { showSortMenu = !showSortMenu }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Sort options")
-                    }
-                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                        SortField.entries.forEach { field ->
-                            DropdownMenuItem(
-                                text = { Text(field.name) },
-                                onClick = {
-                                    viewModel.setSortField(field)
-                                    showSortMenu = false
-                                },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                    Text(if (sortAscending) "Ascending" else "Descending")
-                                }
-                            },
-                            onClick = {
-                                viewModel.toggleSortDirection()
-                            },
                         )
                     }
                 }
@@ -234,6 +250,7 @@ fun HomeScreen(
                                     isSelected = entry.file.absolutePath in selectedPaths,
                                     onToggleSelect = { viewModel.toggleSelected(entry.file) },
                                     onNavigateIn = { viewModel.navigateInto(entry.file, vol.label) },
+                                    onOpenFile = { openFileWithDefaultApp(context, entry.file) },
                                 )
                             }
                         }
@@ -277,13 +294,16 @@ private fun BrowserRow(
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onNavigateIn: () -> Unit,
+    onOpenFile: () -> Unit,
 ) {
     val icon = if (entry.isDirectory) "📁" else kindIcon(entry.kind)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = entry.isDirectory) { onNavigateIn() }
+            .clickable {
+                if (entry.isDirectory) onNavigateIn() else onOpenFile()
+            }
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

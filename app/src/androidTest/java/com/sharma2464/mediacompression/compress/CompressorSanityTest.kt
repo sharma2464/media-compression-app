@@ -3,6 +3,8 @@ package com.sharma2464.mediacompression.compress
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.sharma2464.mediacompression.settings.CompressionMode
+import com.sharma2464.mediacompression.compress.CompressionProfile
+import com.sharma2464.mediacompression.compress.CompressionStrength
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,7 +22,8 @@ class CompressorSanityTest {
             android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
                 .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it.outputStream())
         }
-        val result = PhotoCompressor().compress(input, CompressionMode.LOSSLESS_ONLY, context.cacheDir)
+        val profile = CompressionProfile.resolve(CompressionMode.LOSSLESS_ONLY, CompressionStrength.BALANCED)
+        val result = PhotoCompressor().compress(input, profile, context.cacheDir)
         assertTrue(result.outputFile.exists() && result.outputFile.length() > 0)
         assertTrue(result.wasLossless)
     }
@@ -30,7 +33,8 @@ class CompressorSanityTest {
         val inputDir = File(context.cacheDir, "text_in").apply { mkdirs() }
         val workDir = File(context.cacheDir, "text_out").apply { mkdirs() }
         val input = File(inputDir, "test.txt").also { it.writeText("hello world") }
-        val result = TextCompressor().compress(input, CompressionMode.LOSSLESS_ONLY, workDir)
+        val profile = CompressionProfile.resolve(CompressionMode.LOSSLESS_ONLY, CompressionStrength.BALANCED)
+        val result = TextCompressor().compress(input, profile, workDir)
         assertTrue(result.outputFile.readText() == "hello world")
         assertTrue(result.outputFile.name == input.name)
     }
@@ -46,7 +50,8 @@ class CompressorSanityTest {
             zip.finish()
         }
         val outDir = File(workDir, "out").apply { mkdirs() }
-        val result = ZipRecompressor().compress(input, CompressionMode.LOSSLESS_ONLY, outDir)
+        val profile = CompressionProfile.resolve(CompressionMode.LOSSLESS_ONLY, CompressionStrength.BALANCED)
+        val result = ZipRecompressor().compress(input, profile, outDir)
         java.util.zip.ZipFile(result.outputFile).use { zip ->
             assertTrue(zip.getEntry("word/document.xml") != null)
         }

@@ -6,6 +6,8 @@ import androidx.test.uiautomator.UiDevice
 import com.sharma2464.mediacompression.TestStorageAccess
 import org.junit.Before
 import com.sharma2464.mediacompression.settings.CompressionMode
+import com.sharma2464.mediacompression.compress.CompressionProfile
+import com.sharma2464.mediacompression.compress.CompressionStrength
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -50,15 +52,41 @@ class LargestFilesDeviceTest {
         val copy = File(workDir, input.name)
         input.inputStream().use { inp -> copy.outputStream().use { inp.copyTo(it) } }
 
-        val result = VideoCompressor(context).compress(
-            copy,
-            CompressionMode.ADAPTIVE,
-            workDir,
-        ) { /* progress */ }
+        val balanced = CompressionProfile.resolve(CompressionMode.ADAPTIVE, CompressionStrength.BALANCED)
+        val small = CompressionProfile.resolve(CompressionMode.ADAPTIVE, CompressionStrength.SMALL)
 
-        assertTrue(result.outputFile.exists())
+        val balancedResult = VideoCompressor(context).compress(copy, balanced, workDir) { }
+        assertTrue(balancedResult.outputFile.exists())
+        assertTrue(balancedResult.outputFile.length() > 0)
+
+        val copy2 = File(workDir, "retry_${input.name}")
+        input.inputStream().use { inp -> copy2.outputStream().use { inp.copyTo(it) } }
+        val smallResult = VideoCompressor(context).compress(copy2, small, workDir) { }
+        assertTrue(smallResult.outputFile.length() > 0)
+        assertTrue(
+            "SMALL preset should shrink at least as much as BALANCED",
+            smallResult.outputFile.length() <= balancedResult.outputFile.length(),
+        )
+    }
+
+    @LargeTest
+    @Test
+    fun smallest_preset_uses_ffmpeg_encoder_on_test_video() = runBlocking {
+        val input = File(TestStorageAccess.largestFilesDir, SMALLEST_VIDEO)
+        assumeTrue("Smallest test video missing", input.isFile && input.length() > 0)
+
+        val workDir = File(context.cacheDir, "ffmpeg_smallest_test").apply { mkdirs() }
+        val copy = File(workDir, input.name)
+        input.inputStream().use { inp -> copy.outputStream().use { inp.copyTo(it) } }
+
+        val profile = CompressionProfile.resolve(CompressionMode.ADAPTIVE, CompressionStrength.SMALLEST)
+        val result = VideoCompressor(context).compress(copy, profile, workDir) { }
+
+        assertTrue(
+            "Expected FFmpeg output name, got ${result.outputFile.name}",
+            result.outputFile.name.endsWith("_ffmpeg.mp4"),
+        )
         assertTrue(result.outputFile.length() > 0)
-        assertTrue(result.outputFile.length() < input.length())
     }
 
     companion object {

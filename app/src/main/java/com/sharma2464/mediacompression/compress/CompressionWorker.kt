@@ -5,7 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.sharma2464.mediacompression.data.AppDatabase
 import com.sharma2464.mediacompression.settings.AppSettings
-import com.sharma2464.mediacompression.settings.CompressionMode
+import com.sharma2464.mediacompression.compress.CompressionStrength
 import kotlinx.coroutines.CancellationException
 
 class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -13,13 +13,19 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
         val dao = AppDatabase.get(applicationContext).fileEntryDao()
         val pipeline = CompressionPipeline(applicationContext)
         val settings = AppSettings(applicationContext)
+        inputData.getString(INPUT_STRENGTH)?.let { name ->
+            runCatching { CompressionStrength.valueOf(name) }.getOrNull()?.let {
+                settings.sessionCompressionStrength = it
+            }
+        }
+        CompressJobSettings.fromJson(inputData.getString(INPUT_JOB_SETTINGS))?.let {
+            settings.sessionCompressJobSettings = it
+        }
         val queued = dao.queuedForCompression()
         if (queued.isEmpty()) return Result.success()
 
-        val modeLabel = when (settings.compressionMode) {
-            CompressionMode.LOSSLESS_ONLY -> "Lossless only"
-            CompressionMode.ADAPTIVE -> "Adaptive"
-        }
+        val job = settings.sessionCompressJobSettings ?: CompressJobSettings.DEFAULT
+        val modeLabel = CompressSettingsMapper.summaryLabel(job)
         CompressionStatus.startBatch(queued.map { it.displayName to it.sizeBytes }, modeLabel)
 
         try {
@@ -50,6 +56,8 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         } finally {
             settings.sessionDestinationTreeUri = null
+            settings.sessionCompressionStrength = null
+            settings.sessionCompressJobSettings = null
             CompressionStatus.clear()
         }
         return Result.success()
@@ -57,5 +65,7 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
 
     companion object {
         const val WORK_NAME = "compression_pipeline"
+        const val INPUT_STRENGTH = "compression_strength"
+        const val INPUT_JOB_SETTINGS = "compression_job_settings"
     }
 }

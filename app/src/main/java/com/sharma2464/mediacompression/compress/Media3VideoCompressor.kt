@@ -6,17 +6,18 @@ import android.util.Size
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.Presentation
+import androidx.media3.common.util.Clock
 import androidx.media3.transformer.Composition
-import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.DefaultAssetLoaderFactory
+import androidx.media3.transformer.DefaultDecoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
-import androidx.media3.transformer.TransformationRequest
-import androidx.media3.transformer.VideoEncoderSettings
 import com.sharma2464.mediacompression.settings.CompressionMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -63,27 +64,40 @@ internal class Media3VideoCompressor(private val context: Context) {
         onProgress: (Int) -> Unit,
     ) = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine<Unit> { cont ->
-            val videoBitrate = targetBitrate(input, profile.videoBitrateFactor)
-            val encoderFactory = DefaultEncoderFactory.Builder(context)
-                .setRequestedVideoEncoderSettings(
-                    VideoEncoderSettings.Builder().setBitrate(videoBitrate).build(),
-                )
-                .build()
+            val probe = VideoTrackProbe.probe(input)
+            val videoBitrate = profile.targetVideoBitrateBps
+                ?: targetBitrate(input, profile.videoBitrateFactor)
             val videoMime = when (profile.videoCodec) {
                 VideoCodec.H264 -> MimeTypes.VIDEO_H264
                 VideoCodec.H265 -> MimeTypes.VIDEO_H265
             }
-            val requestBuilder = TransformationRequest.Builder().setVideoMimeType(videoMime)
-            if (!profile.removeAudio) {
-                requestBuilder.setAudioMimeType(MimeTypes.AUDIO_AAC)
-            }
-            val transformationRequest = requestBuilder.build()
+            val audioPassthrough = VideoTrackProbe.canPassthroughAudio(
+                probe,
+                profile.removeAudio,
+                profile.volumePercent,
+            )
+            val encoderFactory = VideoEncoderFactories.createWrappingFactory(
+                context = context,
+                videoBitrateBps = videoBitrate,
+                videoMimeType = videoMime,
+                targetFps = profile.targetFps?.toFloat(),
+                audioPassthrough = audioPassthrough,
+            )
+            val decoderFactory = DefaultDecoderFactory.Builder(context)
+                .setEnableDecoderFallback(true)
+                .build()
 
             val editedItem = buildEditedMediaItem(input, profile)
 
-            val transformer = Transformer.Builder(context)
-                .setTransformationRequest(transformationRequest)
+            val transformerBuilder = Transformer.Builder(context)
+                .setVideoMimeType(videoMime)
+                .setMaxDelayBetweenMuxerSamplesMs(30_000)
+                .setAssetLoaderFactory(DefaultAssetLoaderFactory(context, decoderFactory, Clock.DEFAULT))
                 .setEncoderFactory(encoderFactory)
+            if (!audioPassthrough && !profile.removeAudio) {
+                transformerBuilder.setAudioMimeType(MimeTypes.AUDIO_AAC)
+            }
+            val transformer = transformerBuilder
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, result: ExportResult) {
                         if (cont.isActive) cont.resumeWith(Result.success(Unit))
@@ -140,17 +154,23 @@ internal class Media3VideoCompressor(private val context: Context) {
         if (profile.removeAudio) {
             builder.setRemoveAudio(true)
         }
+        profile.targetFps?.let { fps ->
+            builder.setFrameRate(fps)
+        }
+        val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+        profile.targetFps?.let { fps ->
+            videoEffects += FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat())
+        }
         val targetW = profile.targetWidth
         val targetH = profile.targetHeight
         if (targetW != null && targetH != null) {
             val size = readVideoSize(input)
             if (size != null && (size.width != targetW || size.height != targetH)) {
-                val presentation = Presentation.createForWidthAndHeight(
+                videoEffects += Presentation.createForWidthAndHeight(
                     targetW,
                     targetH,
                     Presentation.LAYOUT_SCALE_TO_FIT,
                 )
-                builder.setEffects(Effects(emptyList(), listOf(presentation)))
             }
         } else {
             val cap = profile.maxVideoLongEdge
@@ -162,15 +182,17 @@ internal class Media3VideoCompressor(private val context: Context) {
                         val scale = cap.toFloat() / longEdge
                         val w = (size.width * scale).toInt().coerceAtLeast(2)
                         val h = (size.height * scale).toInt().coerceAtLeast(2)
-                        val presentation = Presentation.createForWidthAndHeight(
+                        videoEffects += Presentation.createForWidthAndHeight(
                             w,
                             h,
                             Presentation.LAYOUT_SCALE_TO_FIT,
                         )
-                        builder.setEffects(Effects(emptyList(), listOf(presentation)))
                     }
                 }
             }
+        }
+        if (videoEffects.isNotEmpty()) {
+            builder.setEffects(Effects(emptyList(), videoEffects))
         }
         return builder.build()
     }

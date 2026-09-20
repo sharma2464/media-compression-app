@@ -23,10 +23,6 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class FeatureGroup(val label: String, val kinds: Set<FileKind>) {
     PHOTOS("Photos", setOf(FileKind.PHOTO, FileKind.LIVE_PHOTO)),
     VIDEOS("Videos", setOf(FileKind.VIDEO)),
-    PDFS("PDFs", setOf(FileKind.PDF)),
-    DOCUMENTS("Documents", setOf(FileKind.DOCUMENT)),
-    TEXT("Text files", setOf(FileKind.TEXT)),
-    OTHER("Other files", setOf(FileKind.OTHER)),
 }
 
 /** Thin SharedPreferences wrapper — no need for DataStore at this scope. */

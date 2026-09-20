@@ -18,14 +18,16 @@ object CompressSettingsEstimator {
             }
         }
         val meta = primaryVideo?.let { VideoMetadataProbe.probe(it) }
-        val profile = CompressSettingsMapper.toProfile(mode, settings, meta)
+        val profile = CompressSettingsMapper.toProfile(mode, settings, meta, primaryVideo)
         var total = 0L
+        val capBytes = settings.platformTarget?.maxBytes
+            ?: (settings.targetSizeMb * 1024 * 1024).toLong().takeIf { settings.targetSizeMb > 0f }
         for ((file, kind) in files) {
             val size = if (file.isDirectory) file.walk().filter { it.isFile }.sumOf { it.length() } else file.length()
             var ratio = profile.estimatedSizeRatio(kind)
-            if (kind == FileKind.VIDEO && settings.platformTarget != null) {
+            if (kind == FileKind.VIDEO && capBytes != null) {
                 val videoCount = files.count { it.second == FileKind.VIDEO }.coerceAtLeast(1)
-                val capPerFile = settings.platformTarget.maxBytes / videoCount
+                val capPerFile = capBytes / videoCount
                 ratio = minOf(ratio, capPerFile.toDouble() / size.coerceAtLeast(1))
             }
             total += (size * ratio).toLong().coerceAtLeast(0)

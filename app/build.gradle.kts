@@ -12,10 +12,13 @@ android {
         applicationId = "com.sharma2464.mediacompression"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["timeout_msec"] = "3600000"
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -39,6 +42,11 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
+
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
 }
 
 dependencies {
@@ -53,31 +61,20 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // Room — local index of scanned files + swipe decisions
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    // WorkManager — background scan + compression pipeline
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // Photo preview + EXIF preservation
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
-    // Video preview + hardware-accelerated transcode
     implementation("androidx.media3:media3-exoplayer:1.4.0")
     implementation("androidx.media3:media3-ui:1.4.0")
     implementation("androidx.media3:media3-transformer:1.4.0")
     implementation("androidx.media3:media3-effect:1.4.0")
-
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7")
-    implementation("com.arthenica:smart-exception-java:0.2.1")
-
-    // PDF stream recompression (no native Android write API for this)
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

@@ -23,14 +23,6 @@ class CompressSettingsMapperTest {
     }
 
     @Test
-    fun platform_target_enables_ffmpeg() {
-        val settings = CompressJobSettings(platformTarget = PlatformPreset.DISCORD)
-        val meta = VideoMetadata(1920, 1080, 60_000, 5_000_000, 30f)
-        val profile = CompressSettingsMapper.toProfile(CompressionMode.ADAPTIVE, settings, meta)
-        assertTrue(profile.preferFfmpeg)
-    }
-
-    @Test
     fun summaryLabel_includes_tier() {
         val label = CompressSettingsMapper.summaryLabel(CompressJobSettings.DEFAULT)
         assertTrue(label.contains("Medium"))

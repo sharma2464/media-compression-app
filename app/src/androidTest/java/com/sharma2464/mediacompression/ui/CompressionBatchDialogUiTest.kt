@@ -45,7 +45,7 @@ class CompressionBatchDialogUiTest {
         }
 
         composeRule.onNodeWithText("Compress").assertIsDisplayed()
-        composeRule.onNodeWithText("Start Compression").assertIsDisplayed()
+        composeRule.onNodeWithText("Start compression").assertIsDisplayed()
         composeRule.onNodeWithTag("compress_start").assertIsDisplayed()
         composeRule.onNodeWithTag("compress_tab_presets").assertIsDisplayed()
         composeRule.onNodeWithTag("compress_hero").assertIsDisplayed()

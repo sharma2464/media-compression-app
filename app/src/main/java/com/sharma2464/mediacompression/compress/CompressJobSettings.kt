@@ -37,6 +37,8 @@ enum class FrameRateChoice {
 data class CompressJobSettings(
     val qualitySlider: Int = 50,
     val presetTier: PresetTier = PresetTier.MEDIUM,
+    /** Target output size in MB (Josh Compressor-style slider / size chips). */
+    val targetSizeMb: Float = 10f,
     val platformTarget: PlatformPreset? = null,
     val videoCodec: VideoCodec = VideoCodec.H265,
     val resolution: ResolutionChoice = ResolutionChoice.ORIGINAL,
@@ -48,6 +50,7 @@ data class CompressJobSettings(
     fun toJson(): String = JSONObject().apply {
         put("qualitySlider", qualitySlider)
         put("presetTier", presetTier.name)
+        put("targetSizeMb", targetSizeMb.toDouble())
         put("platformTarget", platformTarget?.name)
         put("videoCodec", videoCodec.name)
         put("resolution", resolution.name)
@@ -67,6 +70,7 @@ data class CompressJobSettings(
                 CompressJobSettings(
                     qualitySlider = o.optInt("qualitySlider", 50),
                     presetTier = PresetTier.valueOf(o.optString("presetTier", PresetTier.MEDIUM.name)),
+                    targetSizeMb = o.optDouble("targetSizeMb", 10.0).toFloat(),
                     platformTarget = o.optString("platformTarget", "").takeIf { it.isNotEmpty() }
                         ?.let { PlatformPreset.valueOf(it) },
                     videoCodec = VideoCodec.valueOf(o.optString("videoCodec", VideoCodec.H265.name)),

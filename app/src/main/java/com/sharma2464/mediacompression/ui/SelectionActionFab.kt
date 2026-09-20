@@ -37,6 +37,7 @@ import java.io.File
 @Composable
 fun SelectionActionFab(
     selected: Set<File>,
+    compressEnabled: Boolean,
     onCompressClick: () -> Unit,
     onDeleteConfirmed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -110,6 +111,7 @@ fun SelectionActionFab(
             )
             TextButton(
                 onClick = onCompressClick,
+                enabled = compressEnabled,
                 modifier = Modifier
                     .weight(1f)
                     .testTag("selection_compress"),

@@ -6,6 +6,25 @@ import androidx.documentfile.provider.DocumentFile
 import com.sharma2464.mediacompression.data.FileKind
 import java.io.File
 
+fun isCompressibleMedia(kind: FileKind?): Boolean =
+    kind == FileKind.PHOTO || kind == FileKind.VIDEO
+
+fun kindOfFile(file: File): FileKind = classifyFile(guessMimeType(file.name))
+
+fun compressibleFilesInSelection(selected: Set<File>): List<File> {
+    val files = mutableListOf<File>()
+    selected.forEach { file ->
+        if (file.isDirectory) {
+            file.walk().filter { it.isFile }.forEach { child ->
+                if (isCompressibleMedia(kindOfFile(child))) files += child
+            }
+        } else if (isCompressibleMedia(kindOfFile(file))) {
+            files += file
+        }
+    }
+    return files
+}
+
 /** Classifies files into [FileKind] based on MIME type. */
 fun classifyFile(mimeType: String): FileKind = when {
     mimeType.startsWith("image/") -> FileKind.PHOTO

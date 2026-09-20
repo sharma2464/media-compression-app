@@ -53,10 +53,12 @@ import com.sharma2464.mediacompression.compress.enqueueCompression
 import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.scan.classifyFile
 import com.sharma2464.mediacompression.scan.guessMimeType
+import com.sharma2464.mediacompression.scan.isCompressibleMedia
 import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.settings.CompressionMode
 import com.sharma2464.mediacompression.settings.StorageMode
 import com.sharma2464.mediacompression.ui.compress.CompressFlowPreview
+import com.sharma2464.mediacompression.ui.compress.atticus.AtticusProgressScreen
 import com.sharma2464.mediacompression.ui.compress.strengthFromJob
 import kotlinx.coroutines.launch
 import java.io.File
@@ -87,7 +89,9 @@ fun buildCompressPreviewState(
     strength: CompressionStrength = AppSettings(context).compressionStrength,
 ): CompressPreviewState {
     val settings = AppSettings(context)
-    val expanded = expandSelectedFiles(selected)
+    val expanded = expandSelectedFiles(selected).filter { file ->
+        isCompressibleMedia(classifyFile(guessMimeType(file.name)))
+    }
     val items = expanded.map { file ->
         val mime = guessMimeType(file.name)
         CompressPreviewItem(
@@ -221,11 +225,8 @@ private fun ProgressStage(
 ) {
     val context = LocalContext.current
     var cancelArmed by remember { mutableStateOf(false) }
-    var cancelConfirmTaps by remember { mutableStateOf(0) }
-
     LaunchedEffect(batch) {
         cancelArmed = false
-        cancelConfirmTaps = 0
     }
 
     Scaffold(
@@ -246,108 +247,41 @@ private fun ProgressStage(
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).padding(20.dp)) {
-            Text("Compressing files", style = MaterialTheme.typography.titleLarge)
-
-            if (batch == null) {
-                Text("Starting…", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
-                return@Column
+        if (batch == null) {
+            Column(Modifier.padding(padding).padding(20.dp)) {
+                Text("Starting…", style = MaterialTheme.typography.bodyMedium)
             }
-
-            Text(
-                batch.modeLabel,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp),
+            return@Scaffold
+        }
+        val currentName = batch.files.getOrNull(batch.currentIndex)?.fileName
+            ?: batch.files.lastOrNull { it.state != FileCompressionState.QUEUED }?.fileName
+            ?: "Preparing…"
+        val rateText = if (batch.rateBytesPerSec > 0) {
+            "${Formatter.formatShortFileSize(context, batch.rateBytesPerSec)}/s"
+        } else {
+            "—"
+        }
+        val fraction = batchOverallFraction(batch)
+        Column(Modifier.padding(padding)) {
+            AtticusProgressScreen(
+                title = "Compressing files",
+                subtitle = "${batch.modeLabel} · $currentName · $rateText",
+                progress = fraction,
+                onCancel = {
+                    if (!cancelArmed) {
+                        cancelArmed = true
+                    } else {
+                        onCancelConfirmed()
+                    }
+                },
             )
-            Text(
-                "Total files: ${batch.files.size}",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 12.dp),
-            )
-
-            val currentName = batch.files.getOrNull(batch.currentIndex)?.fileName
-                ?: batch.files.lastOrNull { it.state != FileCompressionState.QUEUED }?.fileName
-                ?: "Preparing…"
-            Text(
-                "Current: $currentName",
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                modifier = Modifier.basicMarquee().padding(top = 4.dp),
-            )
-
-            val rateText = if (batch.rateBytesPerSec > 0) {
-                "Rate: ${Formatter.formatShortFileSize(context, batch.rateBytesPerSec)}/s"
-            } else {
-                "Rate: —"
-            }
-            Text(
-                rateText,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-            )
-
-            val fraction = batchOverallFraction(batch)
-            val percent = (fraction * 100).toInt().coerceIn(0, 100)
-            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
-            Text(
-                "$percent%",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            if (fraction >= 0.9f) {
-                Text(
-                    if (fraction >= 0.99f) "Saving file…" else "Finalizing…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
             if (cancelArmed) {
                 Text(
-                    "Compression will stop. Already compressed files are kept.",
+                    "Tap Cancel again to stop. Finished files are kept.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 24.dp),
                 )
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = {
-                            if (cancelConfirmTaps == 0) {
-                                cancelConfirmTaps = 1
-                            } else {
-                                onCancelConfirmed()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (cancelConfirmTaps == 0) "Double tap to cancel" else "Tap again to cancel")
-                    }
-                }
-                TextButton(
-                    onClick = {
-                        cancelArmed = false
-                        cancelConfirmTaps = 0
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Don't cancel")
-                }
-            } else {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = { cancelArmed = true }) {
-                        Text("Cancel")
-                    }
-                }
             }
         }
     }

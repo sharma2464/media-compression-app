@@ -34,6 +34,8 @@ data class CompressionProfile(
     val targetWidth: Int? = null,
     val targetHeight: Int? = null,
     val preferFfmpeg: Boolean = false,
+    /** When set (e.g. platform size cap), overrides factor-based video bitrate. */
+    val targetVideoBitrateBps: Int? = null,
 ) {
     fun estimatedSizeRatio(kind: FileKind?): Double {
         if (mode == CompressionMode.LOSSLESS_ONLY) {

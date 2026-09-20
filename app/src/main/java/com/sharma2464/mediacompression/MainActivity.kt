@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.sharma2464.mediacompression.compress.CompressionStatus
+import com.sharma2464.mediacompression.scan.compressibleFilesInSelection
 import com.sharma2464.mediacompression.scan.hasFullStorageAccess
 import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.settings.SettingsScreen
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
                     val isScanning = loadState is BrowserLoadState.Scanning
                     val selected by fileBrowserViewModel.selected.collectAsState()
                     val compressionBatch by CompressionStatus.batch.collectAsState()
+                    val compressibleCount = remember(selected) { compressibleFilesInSelection(selected).size }
 
                     var compressDialogVisible by remember { mutableStateOf(false) }
                     var compressDialogStage by remember { mutableStateOf(CompressDialogStage.Preview) }
@@ -212,7 +214,9 @@ class MainActivity : ComponentActivity() {
                                 if (tab == Tab.HOME && selected.isNotEmpty()) {
                                     SelectionActionFab(
                                         selected = selected,
+                                        compressEnabled = compressibleCount > 0,
                                         onCompressClick = {
+                                            if (compressibleCount == 0) return@SelectionActionFab
                                             compressPreviewState = buildCompressPreviewState(context, selected)
                                             compressDialogStage = CompressDialogStage.Preview
                                             compressDialogVisible = true

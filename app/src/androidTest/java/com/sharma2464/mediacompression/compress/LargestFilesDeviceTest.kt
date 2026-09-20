@@ -69,26 +69,6 @@ class LargestFilesDeviceTest {
         )
     }
 
-    @LargeTest
-    @Test
-    fun smallest_preset_uses_ffmpeg_encoder_on_test_video() = runBlocking {
-        val input = File(TestStorageAccess.largestFilesDir, SMALLEST_VIDEO)
-        assumeTrue("Smallest test video missing", input.isFile && input.length() > 0)
-
-        val workDir = File(context.cacheDir, "ffmpeg_smallest_test").apply { mkdirs() }
-        val copy = File(workDir, input.name)
-        input.inputStream().use { inp -> copy.outputStream().use { inp.copyTo(it) } }
-
-        val profile = CompressionProfile.resolve(CompressionMode.ADAPTIVE, CompressionStrength.SMALLEST)
-        val result = VideoCompressor(context).compress(copy, profile, workDir) { }
-
-        assertTrue(
-            "Expected FFmpeg output name, got ${result.outputFile.name}",
-            result.outputFile.name.endsWith("_ffmpeg.mp4"),
-        )
-        assertTrue(result.outputFile.length() > 0)
-    }
-
     companion object {
         private const val SMALLEST_VIDEO = "VID20260901164336.mp4"
         private val EXPECTED_VIDEOS = listOf(

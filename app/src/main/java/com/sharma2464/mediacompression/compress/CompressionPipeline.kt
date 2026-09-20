@@ -31,7 +31,7 @@ class CompressionPipeline(private val context: Context) {
         } else {
             null
         }
-        return CompressSettingsMapper.toProfile(settings.compressionMode, job, meta)
+        return CompressSettingsMapper.toProfile(settings.compressionMode, job, meta, localFile)
     }
 
     suspend fun process(entry: FileEntry, onProgress: (Int) -> Unit = {}) {
@@ -266,9 +266,6 @@ class CompressionPipeline(private val context: Context) {
     private fun compressorFor(kind: FileKind): Compressor = when (kind) {
         FileKind.PHOTO -> PhotoCompressor()
         FileKind.VIDEO -> VideoCompressor(context)
-        FileKind.LIVE_PHOTO -> LivePhotoCompressor(context)
-        FileKind.PDF -> PdfCompressor(context)
-        FileKind.DOCUMENT -> ZipRecompressor()
-        FileKind.TEXT, FileKind.OTHER -> TextCompressor()
+        else -> error("Unsupported for compression: $kind")
     }
 }

@@ -263,7 +263,7 @@ fun SettingsScreen(
                 ListItem(
                     headlineContent = { Text("Video encoding") },
                     supportingContent = {
-                        Text("Smallest-file preset uses FFmpeg (GPL) with libx265 when compressing videos.")
+                        Text("Video compression uses hardware Media3 encoding (H.264/H.265 when supported).")
                     },
                 )
             }

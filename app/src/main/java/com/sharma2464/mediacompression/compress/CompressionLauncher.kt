@@ -11,6 +11,7 @@ import com.sharma2464.mediacompression.data.Decision
 import com.sharma2464.mediacompression.data.FileEntry
 import com.sharma2464.mediacompression.scan.classifyFile
 import com.sharma2464.mediacompression.scan.guessMimeType
+import com.sharma2464.mediacompression.scan.isCompressibleMedia
 import com.sharma2464.mediacompression.settings.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,12 +27,15 @@ suspend fun enqueueCompression(context: Context, selected: Set<File>) {
         selected.forEach { file ->
             if (file.isDirectory) {
                 file.walk().filter { it.isFile }.forEach { f ->
-                    entries += fileEntryFrom(f)
+                    if (isCompressibleMedia(classifyFile(guessMimeType(f.name)))) {
+                        entries += fileEntryFrom(f)
+                    }
                 }
-            } else {
+            } else if (isCompressibleMedia(classifyFile(guessMimeType(file.name)))) {
                 entries += fileEntryFrom(file)
             }
         }
+        if (entries.isEmpty()) return@withContext
         dao.insertAll(entries)
         val work = OneTimeWorkRequestBuilder<CompressionWorker>()
             .setInputData(

@@ -1,0 +1,98 @@
+name: Release
+
+# Runs on every push to main (i.e. whenever a PR is merged into main).
+# 1. Builds + tags + publishes a GitHub Release for the version currently in
+#    app/build.gradle.kts, with the APK attached as a downloadable asset.
+# 2. Opens a follow-up PR that bumps the version for the next development
+#    cycle, so merging it becomes the trigger for the *next* release.
+#
+# Skips itself on the bump commit's own merge, otherwise every bump-PR merge
+# would cut another (empty) release and open yet another bump PR.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    if: "!contains(github.event.head_commit.message, 'chore: bump version')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Read current version
+        id: version
+        run: |
+          NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NAME" >> "$GITHUB_OUTPUT"
+
+      # ponytail: no release-signing keystore/secrets are configured for this repo, so this
+      # ships a debug-signed (but otherwise identical) build rather than a Play-signed one.
+      # Fine for direct sideload installs; upgrade path is a signingConfig + repo secrets
+      # once this needs to go through Play or a stricter install source.
+      - name: Assemble APK
+        run: ./gradlew assembleDebug
+
+      - name: Rename APK for release
+        run: |
+          mkdir -p release-out
+          cp app/build/outputs/apk/debug/app-debug.apk "release-out/media-compression-${{ steps.version.outputs.name }}.apk"
+
+      - name: Tag and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "release-out/media-compression-${{ steps.version.outputs.name }}.apk" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes
+
+      - name: Compute next version
+        id: next
+        run: |
+          IFS='.' read -r major minor patch <<< "${{ steps.version.outputs.name }}"
+          NEXT_NAME="$major.$minor.$((patch + 1))"
+          NEXT_CODE=$((${{ steps.version.outputs.code }} + 1))
+          echo "name=$NEXT_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$NEXT_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version for next cycle
+        run: |
+          sed -i "s/versionCode = ${{ steps.version.outputs.code }}/versionCode = ${{ steps.next.outputs.code }}/" app/build.gradle.kts
+          sed -i "s/versionName = \"${{ steps.version.outputs.name }}\"/versionName = \"${{ steps.next.outputs.name }}\"/" app/build.gradle.kts
+
+      - name: Open version bump PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="bump-version-${{ steps.next.outputs.name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "chore: bump version to ${{ steps.next.outputs.name }}"
+          git push -u origin "$BRANCH" --force
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: bump version to ${{ steps.next.outputs.name }}" \
+            --body "Follows the ${{ steps.version.outputs.tag }} release. Prepares the next development version." \
+            || echo "PR already exists for $BRANCH"

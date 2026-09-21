@@ -27,6 +27,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 @UnstableApi
@@ -111,10 +113,17 @@ internal class Media3VideoCompressor(private val context: Context) {
             if (!audioPassthrough && shouldIncludeAudio) {
                 transformerBuilder.setAudioMimeType(profile.audioMime ?: MimeTypes.AUDIO_AAC)
             }
+            val exportDone = AtomicBoolean(false)
+            fun finishExport(block: () -> Unit) {
+                if (exportDone.compareAndSet(false, true)) block()
+            }
+
             val transformer = transformerBuilder
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, result: ExportResult) {
-                        if (cont.isActive) cont.resumeWith(Result.success(Unit))
+                        finishExport {
+                            if (cont.isActive) cont.resume(Unit)
+                        }
                     }
 
                     override fun onError(
@@ -122,7 +131,14 @@ internal class Media3VideoCompressor(private val context: Context) {
                         result: ExportResult,
                         exception: ExportException,
                     ) {
-                        if (cont.isActive) cont.resumeWithException(exception)
+                        finishExport {
+                            if (!cont.isActive) return@finishExport
+                            if (CompressionStatus.cancelRequested.value) {
+                                cont.resume(Unit)
+                            } else {
+                                cont.resumeWithException(exception)
+                            }
+                        }
                     }
                 })
                 .build()
@@ -157,7 +173,7 @@ internal class Media3VideoCompressor(private val context: Context) {
             }
             cont.invokeOnCancellation {
                 pollJob.cancel()
-                transformer.cancel()
+                runCatching { transformer.cancel() }
             }
         }
     }

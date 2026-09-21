@@ -5,11 +5,17 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.sharma2464.mediacompression.MediaCompressionApp
 
 /** Hosts the long-running compression WorkManager job with a visible progress notification. */
 class CompressionForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        super.onDestroy()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("Starting compression…"))

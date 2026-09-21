@@ -80,17 +80,18 @@ fun AtticusProgressScreen(
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
-        CompressionComparePreview(
-            sourceUri = sourceUri ?: fileUri,
-            fileKind = fileKind,
-            livePercent = currentPercent,
-            durationMs = durationMs,
-            encodeOutputPath = encodeOutputPath,
-            finishedOutputPath = finishedOutputPath,
-            jobSettings = jobSettings,
-            videoMeta = videoMeta,
-            previewActive = previewActive,
-        )
+        if (previewActive) {
+            CompressionComparePreview(
+                sourceUri = sourceUri ?: fileUri,
+                fileKind = fileKind,
+                livePercent = currentPercent,
+                durationMs = durationMs,
+                encodeOutputPath = encodeOutputPath,
+                finishedOutputPath = finishedOutputPath,
+                jobSettings = jobSettings,
+                videoMeta = videoMeta,
+            )
+        }
         if (frameLabel != null) {
             Text(
                 frameLabel,

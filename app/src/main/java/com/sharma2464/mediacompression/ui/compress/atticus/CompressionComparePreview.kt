@@ -33,7 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -70,7 +71,6 @@ fun CompressionComparePreview(
     finishedOutputPath: String?,
     jobSettings: CompressJobSettings? = null,
     videoMeta: VideoMetadata? = null,
-    previewActive: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -104,24 +104,6 @@ fun CompressionComparePreview(
         encodeOutputPath,
     )
 
-    LaunchedEffect(sourceUri, fileKind, displayPercent, durationMs, previewActive) {
-        if (!previewActive || isPhoto || sourceUri == null) return@LaunchedEffect
-        originalBitmap = CompressionPreviewFrames.loadVideoFrame(
-            context,
-            sourceUri,
-            displayPercent,
-            durationMs,
-        )
-    }
-
-    LaunchedEffect(originalBitmap, jobSettings, videoMeta, previewActive, displayPercent) {
-        if (!previewActive || isPhoto) return@LaunchedEffect
-        val original = originalBitmap
-        if (original == null || jobSettings == null || videoMeta == null) return@LaunchedEffect
-        compressedBitmap = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
-        compressedIsSynthetic = true
-    }
-
     LaunchedEffect(
         sourceUri,
         fileKind,
@@ -130,10 +112,18 @@ fun CompressionComparePreview(
         livePercent,
         encodeOutputPath,
         finishedOutputPath,
-        previewActive,
+        jobSettings,
+        videoMeta,
     ) {
-        if (!previewActive || isPhoto || sourceUri == null) return@LaunchedEffect
+        if (isPhoto || sourceUri == null) return@LaunchedEffect
         while (isActive) {
+            val original = CompressionPreviewFrames.loadVideoFrame(
+                context,
+                sourceUri,
+                displayPercent,
+                durationMs,
+            )
+            originalBitmap = original
             val path = CompressionPreviewFrames.resolveCompressedPreviewPath(
                 finishedOutputPath,
                 encodeOutputPath,
@@ -152,15 +142,30 @@ fun CompressionComparePreview(
                     lastGoodCompressed = encoded
                     compressedIsSynthetic = false
                 }
+                original != null && jobSettings != null && videoMeta != null -> {
+                    compressedBitmap = CompressionPreviewSynthetic.fromOriginal(
+                        original,
+                        videoMeta,
+                        jobSettings,
+                    )
+                    compressedIsSynthetic = true
+                }
                 livePercent >= 100 -> {
                     compressedBitmap = lastGoodCompressed
                     compressedIsSynthetic = false
                 }
+                else -> {
+                    compressedBitmap = null
+                    compressedIsSynthetic = false
+                }
             }
             if (encoded != null && livePercent >= 100) break
-            delay(500)
+            delay(600)
         }
     }
+
+    val beforeImage = remember(originalBitmap) { originalBitmap?.asImageBitmap() }
+    val afterImage = remember(compressedBitmap) { compressedBitmap?.asImageBitmap() }
 
     var wipeFraction by remember { mutableFloatStateOf(0.5f) }
     var scale by remember { mutableFloatStateOf(1f) }
@@ -247,52 +252,13 @@ fun CompressionComparePreview(
                                 }
                             },
                     ) {
-                        val after = compressedBitmap
-                        val before = originalBitmap
                         Box(Modifier.fillMaxSize().then(imageTransform)) {
-                            when {
-                                after != null -> {
-                                    Image(
-                                        bitmap = after.asImageBitmap(),
-                                        contentDescription = "Compressed",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                }
-                                before != null -> {
-                                    Image(
-                                        bitmap = before.asImageBitmap(),
-                                        contentDescription = "Original (waiting for encoded frame)",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .alpha(0.35f),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                }
-                                else -> {
-                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Text("Loading preview…", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                            }
-                            if (before != null && after != null) {
-                                Box(
-                                    Modifier
-                                        .fillMaxHeight()
-                                        .width(dividerDp)
-                                        .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
-                                ) {
-                                    Image(
-                                        bitmap = before.asImageBitmap(),
-                                        contentDescription = "Original",
-                                        modifier = Modifier
-                                            .width(fullWidth)
-                                            .fillMaxHeight()
-                                            .align(Alignment.CenterStart),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                }
-                            }
+                            CompareWipeContent(
+                                beforeImage = beforeImage,
+                                afterImage = afterImage,
+                                dividerDp = dividerDp,
+                                fullWidth = fullWidth,
+                            )
                         }
                     }
 
@@ -331,6 +297,62 @@ fun CompressionComparePreview(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp, start = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun CompareWipeContent(
+    beforeImage: ImageBitmap?,
+    afterImage: ImageBitmap?,
+    dividerDp: Dp,
+    fullWidth: Dp,
+) {
+    when {
+        beforeImage != null && afterImage != null -> {
+            Image(
+                bitmap = afterImage,
+                contentDescription = "Compressed",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(dividerDp)
+                    .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
+            ) {
+                Image(
+                    bitmap = beforeImage,
+                    contentDescription = "Original",
+                    modifier = Modifier
+                        .width(fullWidth)
+                        .fillMaxHeight()
+                        .align(Alignment.CenterStart),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+        }
+        afterImage != null -> {
+            Image(
+                bitmap = afterImage,
+                contentDescription = "Compressed",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        beforeImage != null -> {
+            Image(
+                bitmap = beforeImage,
+                contentDescription = "Original",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        else -> {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Loading preview…", style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }
 

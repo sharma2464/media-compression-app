@@ -8,6 +8,8 @@ import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.compress.CompressionStrength
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -38,6 +40,7 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
         try {
             for ((index, entry) in queued.withIndex()) {
                 if (CompressionStatus.cancelRequested.value) {
+                    markRemainingCancelled(queued, index)
                     break
                 }
                 val durationMs = if (entry.kind == FileKind.VIDEO) {
@@ -88,6 +91,7 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                     CompressionStatus.markDone(index)
                 } catch (e: CancellationException) {
                     CompressionStatus.markCancelled(index)
+                    markRemainingCancelled(queued, index + 1)
                     break
                 } catch (e: Exception) {
                     e.printStackTrace() // leaves entry as COMPRESS so it's retried next run
@@ -97,7 +101,9 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
         } catch (e: CancellationException) {
             // WorkManager cancellation — state already updated in the loop.
         } finally {
-            CompressionForegroundService.stop(applicationContext)
+            withContext(NonCancellable) {
+                CompressionForegroundService.stop(applicationContext)
+            }
             settings.sessionDestinationTreeUri = null
             settings.sessionCompressionStrength = null
             settings.sessionCompressJobSettings = null
@@ -114,6 +120,12 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         return Result.success()
+    }
+
+    private fun markRemainingCancelled(queued: List<com.sharma2464.mediacompression.data.FileEntry>, fromIndex: Int) {
+        for (i in fromIndex until queued.size) {
+            CompressionStatus.markCancelled(i)
+        }
     }
 
     companion object {

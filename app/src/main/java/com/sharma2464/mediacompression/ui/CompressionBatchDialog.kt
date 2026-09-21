@@ -293,12 +293,13 @@ private fun ProgressStage(
             seenActiveCompression = true
         }
     }
-    LaunchedEffect(batch, compressionWorkActive, seenActiveCompression, cancelResultMessage) {
+    LaunchedEffect(batch, compressionWorkActive, seenActiveCompression, cancelResultMessage, cancelInProgress) {
         if (
             seenActiveCompression &&
             batch == null &&
             !compressionWorkActive &&
-            cancelResultMessage == null
+            cancelResultMessage == null &&
+            !cancelInProgress
         ) {
             onCompressionStopped()
         }
@@ -394,6 +395,7 @@ private fun ProgressStage(
                 showCancelConfirmation = showCancelConfirmation,
                 cancelInProgress = cancelInProgress,
                 cancelResultMessage = cancelResultMessage,
+                previewActive = !cancelInProgress && cancelResultMessage == null,
                 onRequestCancel = { showCancelConfirmation = true },
                 onDeclineCancel = { showCancelConfirmation = false },
                 onConfirmCancel = {

@@ -88,13 +88,16 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                     CompressionStatus.markDone(index)
                 } catch (e: CancellationException) {
                     CompressionStatus.markCancelled(index)
-                    throw e
+                    break
                 } catch (e: Exception) {
                     e.printStackTrace() // leaves entry as COMPRESS so it's retried next run
                     CompressionStatus.markFailed(index)
                 }
             }
+        } catch (e: CancellationException) {
+            // WorkManager cancellation — state already updated in the loop.
         } finally {
+            CompressionForegroundService.stop(applicationContext)
             settings.sessionDestinationTreeUri = null
             settings.sessionCompressionStrength = null
             settings.sessionCompressJobSettings = null

@@ -57,6 +57,7 @@ fun AtticusProgressScreen(
     showCancelConfirmation: Boolean = false,
     cancelInProgress: Boolean = false,
     cancelResultMessage: String? = null,
+    previewActive: Boolean = true,
     onRequestCancel: () -> Unit = {},
     onConfirmCancel: () -> Unit = {},
     onDeclineCancel: () -> Unit = {},
@@ -88,6 +89,7 @@ fun AtticusProgressScreen(
             finishedOutputPath = finishedOutputPath,
             jobSettings = jobSettings,
             videoMeta = videoMeta,
+            previewActive = previewActive,
         )
         if (frameLabel != null) {
             Text(

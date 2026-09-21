@@ -15,6 +15,12 @@ object CompressionPreviewFrames {
     private const val MAX_PREVIEW_EDGE = 720
     private const val MIN_ENCODED_BYTES = 256L
 
+    fun recycleIfReplaced(old: Bitmap?, new: Bitmap?) {
+        if (old != null && old != new && !old.isRecycled) {
+            old.recycle()
+        }
+    }
+
     fun positionLabel(percent: Int, durationMs: Long?): String? {
         if (durationMs == null || durationMs <= 0) return null
         val positionMs = (percent.coerceIn(0, 100) / 100f * durationMs).toLong()

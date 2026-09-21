@@ -70,6 +70,7 @@ fun CompressionComparePreview(
     finishedOutputPath: String?,
     jobSettings: CompressJobSettings? = null,
     videoMeta: VideoMetadata? = null,
+    previewActive: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -103,37 +104,40 @@ fun CompressionComparePreview(
         encodeOutputPath,
     )
 
+    LaunchedEffect(sourceUri, fileKind, displayPercent, durationMs, previewActive) {
+        if (!previewActive || isPhoto || sourceUri == null) return@LaunchedEffect
+        originalBitmap = CompressionPreviewFrames.loadVideoFrame(
+            context,
+            sourceUri,
+            displayPercent,
+            durationMs,
+        )
+    }
+
+    LaunchedEffect(originalBitmap, jobSettings, videoMeta, previewActive, displayPercent) {
+        if (!previewActive || isPhoto) return@LaunchedEffect
+        val original = originalBitmap
+        if (original == null || jobSettings == null || videoMeta == null) return@LaunchedEffect
+        compressedBitmap = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
+        compressedIsSynthetic = true
+    }
+
     LaunchedEffect(
         sourceUri,
         fileKind,
         displayPercent,
         durationMs,
-        compressedPath,
         livePercent,
-        jobSettings,
-        videoMeta,
         encodeOutputPath,
         finishedOutputPath,
+        previewActive,
     ) {
-        if (isPhoto) {
-            originalBitmap = null
-            compressedBitmap = null
-            compressedIsSynthetic = false
-            return@LaunchedEffect
-        }
-        if (sourceUri == null) return@LaunchedEffect
+        if (!previewActive || isPhoto || sourceUri == null) return@LaunchedEffect
         while (isActive) {
             val path = CompressionPreviewFrames.resolveCompressedPreviewPath(
                 finishedOutputPath,
                 encodeOutputPath,
             )
-            val original = CompressionPreviewFrames.loadVideoFrame(
-                context,
-                sourceUri,
-                displayPercent,
-                durationMs,
-            )
-            originalBitmap = original
             val encoded = path?.let {
                 CompressionPreviewFrames.loadEncodedCompareFrame(
                     it,
@@ -148,25 +152,13 @@ fun CompressionComparePreview(
                     lastGoodCompressed = encoded
                     compressedIsSynthetic = false
                 }
-                original != null && jobSettings != null && videoMeta != null -> {
-                    compressedBitmap = CompressionPreviewSynthetic.fromOriginal(
-                        original,
-                        videoMeta,
-                        jobSettings,
-                    )
-                    compressedIsSynthetic = true
-                }
                 livePercent >= 100 -> {
                     compressedBitmap = lastGoodCompressed
                     compressedIsSynthetic = false
                 }
-                else -> {
-                    compressedBitmap = null
-                    compressedIsSynthetic = false
-                }
             }
             if (encoded != null && livePercent >= 100) break
-            delay(400)
+            delay(500)
         }
     }
 

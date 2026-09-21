@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Git push after every turn
 
-When this assistant **finishes a turn** and the working tree has **any** code changes (modified or new files under the repo, excluding deliberate local-only paths like `screenshots/` unless the user asked to include them):
+When this assistant **finishes a turn** and the working tree has **any** code changes (modified or new files under the repo, excluding deliberate local-only paths like `.cache/` unless the user asked to include them):
 
 1. **Do not leave changes only local.** Sync to `origin` is mandatory for that turn.
 2. **Commit** all relevant changes with a clear message (1–2 sentences, why-focused). Do not commit secrets (`.env`, credentials, keys).

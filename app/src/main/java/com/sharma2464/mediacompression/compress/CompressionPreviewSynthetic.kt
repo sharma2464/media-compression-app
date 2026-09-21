@@ -15,20 +15,14 @@ object CompressionPreviewSynthetic {
         meta: VideoMetadata,
         settings: CompressJobSettings,
     ): Bitmap {
+        // Keep preview bitmap dimensions identical to [original] so wipe compare crops align.
         val (fullW, fullH) = VideoMetadataProbe.targetDimensions(meta, settings.resolution)
-        val scale = min(
+        val willShrink = min(
             fullW.toFloat() / meta.width.coerceAtLeast(1),
             fullH.toFloat() / meta.height.coerceAtLeast(1),
-        ).coerceAtMost(1f)
-        val tw = (original.width * scale).toInt().coerceAtLeast(1)
-        val th = (original.height * scale).toInt().coerceAtLeast(1)
-        if (tw < original.width || th < original.height) {
-            val scaled = Bitmap.createScaledBitmap(original, tw, th, true)
-            return jpegDegrade(scaled, 45).also {
-                if (scaled != original) scaled.recycle()
-            }
-        }
-        return jpegDegrade(original, 40)
+        ) < 1f
+        val quality = if (willShrink) 45 else 40
+        return jpegDegrade(original, quality)
     }
 
     private fun jpegDegrade(source: Bitmap, quality: Int): Bitmap {

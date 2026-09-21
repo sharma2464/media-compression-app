@@ -24,7 +24,11 @@ Requires JDK 17 and Android SDK (compileSdk 34).
 ./gradlew assembleDebug          # installable debug APK
 ./gradlew installDebug           # device connected via adb
 ./gradlew testDebugUnitTest      # unit tests
+./scripts/verify.sh              # unit + instrumented UI + preview E2E (device)
 ```
+
+Local capture artifacts (screenshots, pulled test output) go under **`.cache/`** (gitignored).
+Override with `MEDIA_COMPRESSION_TMP` if needed. Optional: `./scripts/preview-bug-watch.sh`.
 
 Release builds use R8 (`assembleRelease`) but are **unsigned**; GitHub releases ship
 the **debug-signed** APK from `assembleDebug` for sideloading.

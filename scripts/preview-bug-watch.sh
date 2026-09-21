@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
+# Instrumented compress + preview screenshots (reliable). Pulls PNGs into .cache/.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=cache-dir.sh
 source "$ROOT/scripts/cache-dir.sh"
-OUT="$PREVIEW_CAPTURES/e2e-$(date +%Y%m%d-%H%M%S)"
 PKG=com.sharma2464.mediacompression
-TEST_PKG="${PKG}.test"
+OUT="$PREVIEW_CAPTURES/watch-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUT"
 
 cd "$ROOT"
 ./gradlew installDebug installDebugAndroidTest -q
 
-adb shell pm clear "$PKG" >/dev/null
-adb shell appops set "$PKG" MANAGE_EXTERNAL_STORAGE allow 2>/dev/null || true
-
 adb shell am instrument -w \
   -e class "com.sharma2464.mediacompression.e2e.PreviewScreenshotE2ETest#capture_compress_preview_timeline" \
-  "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner" | tail -8
+  "${PKG}.test/androidx.test.runner.AndroidJUnitRunner" | tail -8
 
-REMOTE="/sdcard/Android/data/$PKG/files/preview_captures"
-mkdir -p "$OUT"
-adb pull "$REMOTE/." "$OUT/" 2>/dev/null || true
+adb pull /sdcard/Android/data/$PKG/files/preview_captures/. "$OUT/" 2>/dev/null || true
+
 echo "OUT=$OUT"
-ls -la "$OUT" || true
+ls -la "$OUT" | head -20

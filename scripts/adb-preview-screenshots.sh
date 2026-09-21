@@ -2,11 +2,12 @@
 # Capture compare-preview screenshots during an active compress session (device must show progress UI).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/screenshots/preview-captures/$(date +%Y%m%d-%H%M%S)"
+# shellcheck source=cache-dir.sh
+source "$ROOT/scripts/cache-dir.sh"
+OUT="$PREVIEW_CAPTURES/adb-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 PKG=com.sharma2464.mediacompression
 
-# Open expanded progress if minimized bar visible (~bottom card)
 adb shell input tap 540 2050 || true
 sleep 1.5
 
@@ -23,5 +24,5 @@ for i in $(seq -w 1 15); do
   sleep 3
 done
 
-adb shell run-as "$PKG" cat files/debug-d66e0a.ndjson 2>/dev/null > "$OUT/debug.ndjson" || true
-echo "Saved $(ls -1 "$OUT"/*.png 2>/dev/null | wc -l) PNGs under $OUT"
+echo "OUT=$OUT"
+echo "Saved $(ls -1 "$OUT"/*.png 2>/dev/null | wc -l) PNGs"

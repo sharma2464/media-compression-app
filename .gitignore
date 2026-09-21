@@ -11,3 +11,6 @@ local.properties
 .claude/
 .serena/
 release-out/
+.cache/
+screenshots/
+.cursor/debug-*.log

@@ -21,7 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-/** Holds compress progress ~40s so preview stability logs can be collected via logcat DBG_D66E0. */
+/** Compress flow with compare preview visible through early progress (no cancel). */
 @RunWith(AndroidJUnit4::class)
 class PreviewStabilityE2ETest {
 
@@ -33,10 +33,8 @@ class PreviewStabilityE2ETest {
     @Before
     fun setUp() {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        device.executeShellCommand("am force-stop com.sharma2464.mediacompression")
         assumeTrue(TestStorageAccess.ensureAllFilesAccess(device))
-        val sample = File(TestStorageAccess.largestFilesDir, SMALLEST_VIDEO)
-        assumeTrue(sample.canRead())
+        assumeTrue(TestStorageAccess.canReadLargestFiles())
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val intent = Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -75,7 +73,17 @@ class PreviewStabilityE2ETest {
                 true
             }.getOrDefault(false)
         }
-        Thread.sleep(45_000)
+        composeRule.waitUntil(timeoutMillis = 120_000) {
+            runCatching {
+                composeRule.onNodeWithTag("compress_compare_preview").assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        }
+        repeat(8) {
+            composeRule.waitForIdle()
+            Thread.sleep(2_500)
+            composeRule.onNodeWithTag("compress_compare_preview").assertIsDisplayed()
+        }
     }
 
     companion object {

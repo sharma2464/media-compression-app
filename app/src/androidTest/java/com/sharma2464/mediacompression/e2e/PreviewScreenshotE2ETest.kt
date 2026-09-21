@@ -24,8 +24,8 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /**
- * Captures timed screenshots during compress progress for visual / agent analysis.
- * Pull from device: adb pull /sdcard/Android/data/com.sharma2464.mediacompression/files/preview_captures
+ * Captures timed screenshots during compress progress for local diagnostics only.
+ * PNGs stay on device external storage; pull with [scripts/preview-bug-watch.sh] into `.cache/`.
  */
 @RunWith(AndroidJUnit4::class)
 class PreviewScreenshotE2ETest {
@@ -91,9 +91,12 @@ class PreviewScreenshotE2ETest {
         capture("01_progress_start", previewBounds)
 
         repeat(12) { i ->
+            composeRule.waitForIdle()
             Thread.sleep(3_500)
+            composeRule.waitForIdle()
             if (i == 3 || i == 7) {
                 dragDivider(previewBounds, if (i == 3) 0.25f else 0.75f)
+                composeRule.waitForIdle()
                 Thread.sleep(400)
             }
             capture("step_${(i + 2).toString().padStart(2, '0')}", previewBounds)

@@ -107,29 +107,36 @@ object CompressionPreviewFrames {
         return loadVideoFrameAtTimeUs(context, uriString, timeUs)
     }
 
-    suspend fun loadEncodedFrameAtTimeUs(filePath: String, timeUs: Long): Bitmap? =
-        withContext(Dispatchers.IO) {
-            val file = File(filePath)
-            if (!file.exists() || file.length() < MIN_ENCODED_BYTES) return@withContext null
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(file.absolutePath)
-                val fallbacks = listOf(timeUs, (timeUs * 0.5f).toLong(), 0L).distinct()
-                for (t in fallbacks) {
-                    val frame = retriever.getFrameAtTime(
-                        t,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                    ) ?: retriever.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST)
-                    val scaled = downscale(frame)
-                    if (scaled != null) return@withContext scaled
-                }
-                null
-            } catch (_: Exception) {
-                null
-            } finally {
-                retriever.release()
+    suspend fun loadEncodedFrameAtTimeUs(
+        filePath: String,
+        timeUs: Long,
+        allowFallbacks: Boolean = true,
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        val file = File(filePath)
+        if (!file.exists() || file.length() < MIN_ENCODED_BYTES) return@withContext null
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val times = if (allowFallbacks) {
+                listOf(timeUs, (timeUs * 0.5f).toLong(), 0L).distinct()
+            } else {
+                listOf(timeUs)
             }
+            for (t in times) {
+                val frame = retriever.getFrameAtTime(
+                    t,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                ) ?: retriever.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST)
+                val scaled = downscale(frame)
+                if (scaled != null) return@withContext scaled
+            }
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            retriever.release()
         }
+    }
 
     data class CompareFrameLoad(
         val original: Bitmap?,
@@ -167,38 +174,72 @@ object CompressionPreviewFrames {
         }
 
         val useEncodeCap = encodingInProgress && encodedPath != null
-        val seekUs = compareSeekTimeUs(
+        val primarySeekUs = compareSeekTimeUs(
             duration,
             timelinePercent,
             encodeProgressPercent,
             encodedDurationMs,
             useEncodeCap,
         )
+        val seekCandidates = listOf(
+            primarySeekUs,
+            (primarySeekUs * 0.5f).toLong(),
+            0L,
+        ).distinct()
 
-        val original = loadVideoFrameAtTimeUs(context, sourceUri, seekUs)
-        val compressed: Bitmap?
-        val synthetic: Boolean
-        when {
-            encodedPath != null -> {
-                val encoded = loadEncodedFrameAtTimeUs(encodedPath, seekUs)
-                if (encoded != null) {
-                    compressed = encoded
-                    synthetic = false
-                } else if (original != null && jobSettings != null && videoMeta != null) {
-                    compressed = syntheticFromOriginal(original, videoMeta, jobSettings)
-                    synthetic = true
-                } else {
-                    compressed = null
-                    synthetic = false
+        var original: Bitmap? = null
+        var compressed: Bitmap? = null
+        var synthetic = false
+        var usedSeekUs = primarySeekUs
+        var fallbackOriginal: Bitmap? = null
+
+        for (seekUs in seekCandidates) {
+            val orig = loadVideoFrameAtTimeUs(context, sourceUri, seekUs) ?: continue
+            when {
+                encodedPath != null -> {
+                    val encoded = loadEncodedFrameAtTimeUs(
+                        encodedPath,
+                        seekUs,
+                        allowFallbacks = false,
+                    )
+                    if (encoded != null) {
+                        fallbackOriginal?.recycle()
+                        original = orig
+                        compressed = encoded
+                        synthetic = false
+                        usedSeekUs = seekUs
+                        break
+                    }
+                    fallbackOriginal?.recycle()
+                    fallbackOriginal = orig
+                }
+                else -> {
+                    fallbackOriginal?.recycle()
+                    original = orig
+                    usedSeekUs = seekUs
+                    break
                 }
             }
-            original != null && jobSettings != null && videoMeta != null -> {
-                compressed = syntheticFromOriginal(original, videoMeta, jobSettings)
-                synthetic = true
-            }
-            else -> {
-                compressed = null
-                synthetic = false
+        }
+
+        if (original == null && fallbackOriginal != null) {
+            original = fallbackOriginal
+            fallbackOriginal = null
+        } else {
+            fallbackOriginal?.recycle()
+        }
+
+        if (compressed == null && original != null && jobSettings != null && videoMeta != null) {
+            compressed = syntheticFromOriginal(original, videoMeta, jobSettings)
+            synthetic = true
+        }
+
+        if (original != null && compressed != null && !synthetic) {
+            val o = original
+            val c = compressed
+            if (o.width != c.width || o.height != c.height) {
+                compressed = Bitmap.createScaledBitmap(c, o.width, o.height, true)
+                if (compressed !== c) c.recycle()
             }
         }
 
@@ -206,7 +247,7 @@ object CompressionPreviewFrames {
             original = original,
             compressed = compressed,
             compressedIsSynthetic = synthetic,
-            seekTimeUs = seekUs,
+            seekTimeUs = usedSeekUs,
             encodedDurationMs = encodedDurationMs,
         )
     }

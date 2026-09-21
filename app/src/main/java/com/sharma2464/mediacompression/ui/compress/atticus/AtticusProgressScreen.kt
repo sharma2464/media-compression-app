@@ -28,8 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
-import com.sharma2464.mediacompression.debug.DebugSessionLog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
@@ -72,31 +70,6 @@ fun AtticusProgressScreen(
         label = "progress",
     )
     val frameLabel = CompressionPreviewFrames.positionLabel(currentPercent, durationMs)
-    val dbg = LocalContext.current
-    // #region agent log
-    LaunchedEffect(
-        cancelResultMessage,
-        cancelInProgress,
-        showCancelConfirmation,
-        progress,
-        previewActive,
-    ) {
-        DebugSessionLog.log(
-            dbg,
-            "H1",
-            "AtticusProgressScreen.kt:compose",
-            "progress_ui_state",
-            mapOf(
-                "cancelResultMessageSet" to (cancelResultMessage != null),
-                "cancelInProgress" to cancelInProgress,
-                "showCancelConfirmation" to showCancelConfirmation,
-                "progress" to progress,
-                "previewActive" to previewActive,
-                "showsProgressCard" to (cancelResultMessage == null && !cancelInProgress),
-            ),
-        )
-    }
-    // #endregion
 
     Column(
         modifier

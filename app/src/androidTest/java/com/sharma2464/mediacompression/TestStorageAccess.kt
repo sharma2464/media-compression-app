@@ -14,6 +14,7 @@ object TestStorageAccess {
     val largestFilesDir: File = File("/storage/emulated/0/largest_files")
 
     fun ensureAllFilesAccess(device: UiDevice? = null): Boolean {
+        if (canReadLargestFiles()) return true
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val pkg = context.packageName
         InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(

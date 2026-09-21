@@ -40,6 +40,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -60,6 +61,18 @@ private fun clampPanOffset(offset: Float, containerPx: Float, scale: Float): Flo
     if (scale <= 1f) return 0f
     val max = containerPx * (scale - 1f) / 2f
     return offset.coerceIn(-max, max)
+}
+
+/** Same pixel size so [ContentScale.Crop] aligns at the wipe divider. */
+private fun matchPreviewBitmapSize(source: Bitmap, reference: Bitmap?): Bitmap {
+    if (reference == null) return source
+    if (source.width == reference.width && source.height == reference.height) return source
+    return Bitmap.createScaledBitmap(
+        source,
+        reference.width,
+        reference.height,
+        true,
+    )
 }
 
 @Composable
@@ -150,7 +163,9 @@ fun CompressionComparePreview(
         if (syntheticStepPercent == lastSyntheticStep && compressedIsSynthetic && compressedBitmap != null) {
             return@LaunchedEffect
         }
-        compressedBitmap = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
+        val synthetic = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
+        compressedBitmap = matchPreviewBitmapSize(synthetic, original)
+        if (synthetic !== compressedBitmap) synthetic.recycle()
         compressedIsSynthetic = true
         lastSyntheticStep = syntheticStepPercent
         // #region agent log
@@ -202,7 +217,10 @@ fun CompressionComparePreview(
                 encodePct,
             )
             if (encoded != null && pollKey != lastEncodedPollKey) {
-                compressedBitmap = encoded
+                val ref = originalBitmap
+                val matched = if (ref != null) matchPreviewBitmapSize(encoded, ref) else encoded
+                compressedBitmap = matched
+                if (matched !== encoded) encoded.recycle()
                 compressedIsSynthetic = false
                 lastEncodedPollKey = pollKey
             }
@@ -254,7 +272,8 @@ fun CompressionComparePreview(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp),
+                .height(220.dp)
+                .testTag("compress_compare_preview"),
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
@@ -286,8 +305,6 @@ fun CompressionComparePreview(
                     val widthPx = constraints.maxWidth.toFloat()
                     val heightPx = constraints.maxHeight.toFloat()
                     val dividerX = (wipeFraction * widthPx).roundToInt()
-                    val dividerDp = with(LocalDensity.current) { dividerX.toDp() }
-                    val fullWidth = maxWidth
 
                     Box(Modifier.fillMaxSize()) {
                         Box(
@@ -312,7 +329,7 @@ fun CompressionComparePreview(
                                         }
                                     },
                                 )
-                                .pointerInput(canStepBack, canStepForward) {
+                                .pointerInput(canStepBack, canStepForward, widthPx) {
                                     detectTapGestures { offset ->
                                         if (offset.x < size.width / 3f && canStepBack) {
                                             frameIndex = CompressionPreviewMilestones.stepFrameIndex(
@@ -333,30 +350,29 @@ fun CompressionComparePreview(
                             CompareWipeContent(
                                 beforeImage = beforeImage,
                                 afterImage = afterImage,
-                                dividerDp = dividerDp,
-                                fullWidth = fullWidth,
+                                wipeFraction = wipeFraction,
                             )
-                        }
-                        Box(
-                            Modifier
-                                .fillMaxHeight()
-                                .width(24.dp)
-                                .offset { IntOffset(dividerX - 12, 0) }
-                                .pointerInput(widthPx) {
-                                    detectHorizontalDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        wipeFraction = (wipeFraction + dragAmount / widthPx)
-                                            .coerceIn(0.05f, 0.95f)
-                                    }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
                             Box(
                                 Modifier
                                     .fillMaxHeight()
-                                    .width(3.dp)
-                                    .background(MaterialTheme.colorScheme.primary),
-                            )
+                                    .width(24.dp)
+                                    .offset { IntOffset(dividerX - 12, 0) }
+                                    .pointerInput(widthPx) {
+                                        detectHorizontalDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            wipeFraction = (wipeFraction + dragAmount / widthPx)
+                                                .coerceIn(0.05f, 0.95f)
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxHeight()
+                                        .width(3.dp)
+                                        .background(MaterialTheme.colorScheme.primary),
+                                )
+                            }
                         }
                         LabelChip("Original", Modifier.align(Alignment.TopStart))
                         LabelChip(
@@ -380,34 +396,44 @@ fun CompressionComparePreview(
 private fun CompareWipeContent(
     beforeImage: ImageBitmap?,
     afterImage: ImageBitmap?,
-    dividerDp: Dp,
-    fullWidth: Dp,
+    wipeFraction: Float,
 ) {
-    val rightImage = afterImage ?: beforeImage
     when {
-        beforeImage != null && rightImage != null -> {
+        beforeImage != null && afterImage != null -> {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val slotW = maxWidth
+                val dividerW = slotW * wipeFraction.coerceIn(0.05f, 0.95f)
+                Image(
+                    bitmap = afterImage,
+                    contentDescription = "Compressed",
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(dividerW)
+                        .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
+                ) {
+                    Image(
+                        bitmap = beforeImage,
+                        contentDescription = "Original",
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .width(slotW)
+                            .fillMaxHeight(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+        }
+        beforeImage != null && afterImage == null -> {
             Image(
-                bitmap = rightImage,
-                contentDescription = "Compressed",
+                bitmap = beforeImage,
+                contentDescription = "Original",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .width(dividerDp)
-                    .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
-            ) {
-                Image(
-                    bitmap = beforeImage,
-                    contentDescription = "Original",
-                    modifier = Modifier
-                        .width(fullWidth)
-                        .fillMaxHeight()
-                        .align(Alignment.CenterStart),
-                    contentScale = ContentScale.Crop,
-                )
-            }
         }
         afterImage != null -> {
             Image(

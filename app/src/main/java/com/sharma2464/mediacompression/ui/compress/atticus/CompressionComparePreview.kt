@@ -138,145 +138,100 @@ fun CompressionComparePreview(
             CompressionPreviewMilestones.PERCENT_STEP
     }
 
-    var lastSyntheticStep by remember { mutableIntStateOf(-1) }
-
-    fun applySyntheticFromOriginal(original: Bitmap) {
-        if (jobSettings == null || videoMeta == null) return
-        val synthetic = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
-        compressedBitmap = matchPreviewBitmapSize(synthetic, original)
-        if (synthetic !== compressedBitmap) synthetic.recycle()
-        compressedIsSynthetic = true
-    }
-
-    LaunchedEffect(sourceUri, fileKind, compareTimelinePercent, durationMs) {
-        if (isPhoto || sourceUri == null) return@LaunchedEffect
-        originalBitmap = CompressionPreviewFrames.loadVideoFrame(
-            context,
-            sourceUri,
-            compareTimelinePercent,
-            durationMs,
-        )
-    }
-
-    LaunchedEffect(
-        originalBitmap,
-        compareTimelinePercent,
-        jobSettings,
-        videoMeta,
-        encodeOutputPath,
-        finishedOutputPath,
-    ) {
-        if (isPhoto) return@LaunchedEffect
-        val path = CompressionPreviewFrames.resolveCompressedPreviewPath(
-            finishedOutputPath,
-            encodeOutputPath,
-        )
-        val original = originalBitmap ?: return@LaunchedEffect
-        if (jobSettings == null || videoMeta == null) return@LaunchedEffect
-        if (!compressedIsSynthetic && compressedBitmap != null) return@LaunchedEffect
-        if (lastSyntheticStep == compareTimelinePercent && compressedBitmap != null) {
-            return@LaunchedEffect
-        }
-        applySyntheticFromOriginal(original)
-        lastSyntheticStep = compareTimelinePercent
-        // #region agent log
-        DebugSessionLog.log(
-            context,
-            "P1",
-            "CompressionComparePreview.kt:synthetic",
-            "synthetic_once",
-            mapOf(
-                "compareTimelinePercent" to compareTimelinePercent,
-                "encoding" to (path != null),
-                "origWxH" to "${original.width}x${original.height}",
-                "compWxH" to "${compressedBitmap?.width}x${compressedBitmap?.height}",
-            ),
-            runId = "preview-stable",
-        )
-        // #endregion
-    }
-
     LaunchedEffect(
         sourceUri,
+        fileKind,
         compareTimelinePercent,
-        durationMs,
         liveEncodeBucket,
+        durationMs,
         encodeOutputPath,
         finishedOutputPath,
+        jobSettings,
+        videoMeta,
     ) {
         if (isPhoto || sourceUri == null) return@LaunchedEffect
-        var lastEncodedPollKey = -1
-        var lastLoggedBranch = ""
+        var lastPollKey = -1
+        var lastLoggedSeek = -1L
         while (isActive) {
             val path = CompressionPreviewFrames.resolveCompressedPreviewPath(
                 finishedOutputPath,
                 encodeOutputPath,
             )
-            if (path == null) {
+            val encoding = path != null && livePercentRef.intValue < 100
+            val pollKey = (compareTimelinePercent * 1000) + liveEncodeBucket
+            val shouldPoll = path != null && encoding
+            if (shouldPoll && pollKey == lastPollKey) {
                 delay(800)
                 continue
             }
-            val pollKey = (compareTimelinePercent * 1000) + liveEncodeBucket
-            if (pollKey == lastEncodedPollKey) {
-                delay(800)
-                continue
+            if (!shouldPoll && pollKey == lastPollKey) {
+                return@LaunchedEffect
             }
             val encodePct = livePercentRef.intValue.coerceIn(0, 100)
-            val encoded = CompressionPreviewFrames.loadEncodedCompareFrame(
-                path,
-                durationMs,
-                compareTimelinePercent,
-                encodePct,
+            val settings = jobSettings
+            val meta = videoMeta
+            val load = CompressionPreviewFrames.loadCompareFrames(
+                context = context,
+                sourceUri = sourceUri,
+                encodedPath = path,
+                sourceDurationMs = durationMs,
+                timelinePercent = compareTimelinePercent,
+                encodeProgressPercent = encodePct,
+                encodingInProgress = encoding,
+                jobSettings = settings,
+                videoMeta = meta,
+                syntheticFromOriginal = { original, vm, js ->
+                    CompressionPreviewSynthetic.fromOriginal(original, vm, js)
+                },
             )
-            if (encoded != null && pollKey != lastEncodedPollKey) {
-                val ref = originalBitmap
-                val matched = if (ref != null) matchPreviewBitmapSize(encoded, ref) else encoded
-                compressedBitmap = matched
-                if (matched !== encoded) encoded.recycle()
-                compressedIsSynthetic = false
-                lastEncodedPollKey = pollKey
-            } else if (encoded == null) {
-                val original = originalBitmap
-                if (original != null && jobSettings != null && videoMeta != null) {
-                    applySyntheticFromOriginal(original)
-                    lastSyntheticStep = compareTimelinePercent
-                }
+            val orig = load.original
+            val compRaw = load.compressed
+            val comp = when {
+                orig != null && compRaw != null -> matchPreviewBitmapSize(compRaw, orig)
+                else -> compRaw
             }
+            if (compRaw != null && comp !== compRaw) compRaw.recycle()
+            originalBitmap = orig
+            compressedBitmap = comp
+            compressedIsSynthetic = load.compressedIsSynthetic
+            lastPollKey = pollKey
             val branch = when {
-                encoded != null -> "encoded"
-                compressedBitmap != null && compressedIsSynthetic -> "synthetic"
-                compressedBitmap != null -> "held_encoded"
+                comp != null && !load.compressedIsSynthetic -> "encoded"
+                comp != null && load.compressedIsSynthetic -> "synthetic"
                 else -> "none"
             }
             val wipeMode = when {
-                originalBitmap != null && compressedBitmap != null -> "wipe"
-                originalBitmap != null -> "original_only"
-                compressedBitmap != null -> "compressed_only"
+                orig != null && comp != null -> "wipe"
+                orig != null -> "original_only"
+                comp != null -> "compressed_only"
                 else -> "loading"
             }
             // #region agent log
-            if (branch != lastLoggedBranch) {
-                lastLoggedBranch = branch
+            if (load.seekTimeUs != lastLoggedSeek) {
+                lastLoggedSeek = load.seekTimeUs
                 DebugSessionLog.log(
                     context,
-                    "P2",
-                    "CompressionComparePreview.kt:encodedPoll",
-                    "branch_change",
+                    "P3",
+                    "CompressionComparePreview.kt:compareLoad",
+                    "frame_pair",
                     mapOf(
                         "branch" to branch,
                         "wipeMode" to wipeMode,
-                        "pollKey" to pollKey,
+                        "seekTimeUs" to load.seekTimeUs,
                         "compareTimelinePercent" to compareTimelinePercent,
-                        "previewFramePercent" to previewFramePercent,
-                        "compWxH" to "${compressedBitmap?.width}x${compressedBitmap?.height}",
-                        "origWxH" to "${originalBitmap?.width}x${originalBitmap?.height}",
-                        "livePercent" to livePercent,
+                        "encodePct" to encodePct,
+                        "encoding" to encoding,
+                        "encodedDurationMs" to load.encodedDurationMs,
+                        "origWxH" to "${orig?.width}x${orig?.height}",
+                        "compWxH" to "${comp?.width}x${comp?.height}",
+                        "livePercent" to livePercentRef.intValue,
                     ),
-                    runId = "preview-stable",
+                    runId = "preview-sync",
                 )
             }
             // #endregion
-            if (livePercentRef.intValue >= 100 && encoded != null) break
+            if (!shouldPoll) return@LaunchedEffect
+            if (livePercentRef.intValue >= 100 && branch == "encoded") break
             delay(800)
         }
     }

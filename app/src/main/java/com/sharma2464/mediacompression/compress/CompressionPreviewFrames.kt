@@ -53,28 +53,162 @@ object CompressionPreviewFrames {
         return (seekMs * 1000).toLong()
     }
 
-    suspend fun loadVideoFrame(
+    fun compareSeekTimeUs(
+        sourceDurationMs: Long,
+        timelinePercent: Int,
+        encodeProgressPercent: Int,
+        encodedDurationMs: Long?,
+        useEncodeCap: Boolean,
+    ): Long {
+        if (!useEncodeCap) {
+            return (timelinePercent.coerceIn(0, 100) / 100f * sourceDurationMs * 1000).toLong()
+        }
+        return encodedSeekTimeUs(
+            sourceDurationMs,
+            timelinePercent,
+            encodeProgressPercent,
+            encodedDurationMs,
+        )
+    }
+
+    suspend fun loadVideoFrameAtTimeUs(
         context: Context,
         uriString: String?,
-        percent: Int,
-        durationMs: Long?,
+        timeUs: Long,
     ): Bitmap? = withContext(Dispatchers.IO) {
         if (uriString.isNullOrBlank()) return@withContext null
-        val duration = durationMs ?: return@withContext null
-        if (duration <= 0) return@withContext null
-        val timeUs = (percent.coerceIn(0, 100) / 100f * duration * 1000).toLong()
         val retriever = MediaMetadataRetriever()
         try {
             when {
                 uriString.startsWith("file://") -> retriever.setDataSource(uriString.removePrefix("file://"))
                 else -> retriever.setDataSource(context, Uri.parse(uriString))
             }
-            downscale(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST))
+            downscale(
+                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC),
+            ) ?: downscale(
+                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST),
+            )
         } catch (_: Exception) {
             null
         } finally {
             retriever.release()
         }
+    }
+
+    suspend fun loadVideoFrame(
+        context: Context,
+        uriString: String?,
+        percent: Int,
+        durationMs: Long?,
+    ): Bitmap? {
+        val duration = durationMs ?: return null
+        if (duration <= 0) return null
+        val timeUs = (percent.coerceIn(0, 100) / 100f * duration * 1000).toLong()
+        return loadVideoFrameAtTimeUs(context, uriString, timeUs)
+    }
+
+    suspend fun loadEncodedFrameAtTimeUs(filePath: String, timeUs: Long): Bitmap? =
+        withContext(Dispatchers.IO) {
+            val file = File(filePath)
+            if (!file.exists() || file.length() < MIN_ENCODED_BYTES) return@withContext null
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                val fallbacks = listOf(timeUs, (timeUs * 0.5f).toLong(), 0L).distinct()
+                for (t in fallbacks) {
+                    val frame = retriever.getFrameAtTime(
+                        t,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    ) ?: retriever.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST)
+                    val scaled = downscale(frame)
+                    if (scaled != null) return@withContext scaled
+                }
+                null
+            } catch (_: Exception) {
+                null
+            } finally {
+                retriever.release()
+            }
+        }
+
+    data class CompareFrameLoad(
+        val original: Bitmap?,
+        val compressed: Bitmap?,
+        val compressedIsSynthetic: Boolean,
+        val seekTimeUs: Long,
+        val encodedDurationMs: Long?,
+    )
+
+    suspend fun loadCompareFrames(
+        context: Context,
+        sourceUri: String?,
+        encodedPath: String?,
+        sourceDurationMs: Long?,
+        timelinePercent: Int,
+        encodeProgressPercent: Int,
+        encodingInProgress: Boolean,
+        jobSettings: CompressJobSettings?,
+        videoMeta: VideoMetadata?,
+        syntheticFromOriginal: (Bitmap, VideoMetadata, CompressJobSettings) -> Bitmap,
+    ): CompareFrameLoad = withContext(Dispatchers.IO) {
+        val duration = sourceDurationMs ?: return@withContext CompareFrameLoad(null, null, false, 0L, null)
+        if (duration <= 0) return@withContext CompareFrameLoad(null, null, false, 0L, null)
+
+        val encodedDurationMs = encodedPath?.let { path ->
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            } catch (_: Exception) {
+                null
+            } finally {
+                retriever.release()
+            }
+        }
+
+        val useEncodeCap = encodingInProgress && encodedPath != null
+        val seekUs = compareSeekTimeUs(
+            duration,
+            timelinePercent,
+            encodeProgressPercent,
+            encodedDurationMs,
+            useEncodeCap,
+        )
+
+        val original = loadVideoFrameAtTimeUs(context, sourceUri, seekUs)
+        val compressed: Bitmap?
+        val synthetic: Boolean
+        when {
+            encodedPath != null -> {
+                val encoded = loadEncodedFrameAtTimeUs(encodedPath, seekUs)
+                if (encoded != null) {
+                    compressed = encoded
+                    synthetic = false
+                } else if (original != null && jobSettings != null && videoMeta != null) {
+                    compressed = syntheticFromOriginal(original, videoMeta, jobSettings)
+                    synthetic = true
+                } else {
+                    compressed = null
+                    synthetic = false
+                }
+            }
+            original != null && jobSettings != null && videoMeta != null -> {
+                compressed = syntheticFromOriginal(original, videoMeta, jobSettings)
+                synthetic = true
+            }
+            else -> {
+                compressed = null
+                synthetic = false
+            }
+        }
+
+        CompareFrameLoad(
+            original = original,
+            compressed = compressed,
+            compressedIsSynthetic = synthetic,
+            seekTimeUs = seekUs,
+            encodedDurationMs = encodedDurationMs,
+        )
     }
 
     suspend fun loadEncodedCompareFrame(

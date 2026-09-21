@@ -38,15 +38,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.sharma2464.mediacompression.compress.CompressionWorker
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.CompressSettingsEstimator
 import com.sharma2464.mediacompression.compress.CompressionEstimator
 import com.sharma2464.mediacompression.compress.CompressionPathResolver
 import com.sharma2464.mediacompression.compress.CompressionProfile
 import com.sharma2464.mediacompression.compress.CompressionStrength
+import com.sharma2464.mediacompression.compress.CompressJobSummary
 import com.sharma2464.mediacompression.compress.CompressionStatus
-import com.sharma2464.mediacompression.compress.CompressionWorker
+import com.sharma2464.mediacompression.compress.VideoMetadataProbe
 import com.sharma2464.mediacompression.compress.FileCompressionState
 import com.sharma2464.mediacompression.compress.batchOverallFraction
 import com.sharma2464.mediacompression.compress.enqueueCompression
@@ -202,12 +209,8 @@ fun CompressionBatchDialog(
                     ProgressStage(
                         batch = batch,
                         onBack = onMinimizeProgress,
-                        onCancelConfirmed = {
-                            CompressionStatus.requestCancel()
-                            WorkManager.getInstance(context).cancelUniqueWork(CompressionWorker.WORK_NAME)
-                            CompressionStatus.clear()
-                            onCloseAfterBatch()
-                        },
+                        onCompressionStopped = onCloseAfterBatch,
+                        onShowComplete = { onStageChange(CompressDialogStage.Complete) },
                     )
                 }
                 CompressDialogStage.Complete -> {
@@ -257,12 +260,18 @@ private fun CompleteStage(
 private fun ProgressStage(
     batch: com.sharma2464.mediacompression.compress.CompressionBatch?,
     onBack: () -> Unit,
-    onCancelConfirmed: () -> Unit,
+    onCompressionStopped: () -> Unit,
+    onShowComplete: () -> Unit,
 ) {
     val context = LocalContext.current
-    var cancelArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(batch) {
-        cancelArmed = false
+    val scope = rememberCoroutineScope()
+    val finished by CompressionStatus.finished.collectAsState()
+    var showCancelConfirmation by remember { mutableStateOf(false) }
+    var cancelInProgress by remember { mutableStateOf(false) }
+    var cancelResultMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(batch?.currentIndex) {
+        showCancelConfirmation = false
+        cancelInProgress = false
     }
 
     Scaffold(
@@ -304,27 +313,88 @@ private fun ProgressStage(
             fraction >= 0.9f && fraction < 0.995f -> " · Saving…"
             else -> ""
         }
+        val videoMeta = remember(batch.currentFileUri, batch.currentFileKind) {
+            if (batch.currentFileKind == com.sharma2464.mediacompression.data.FileKind.VIDEO) {
+                VideoMetadataProbe.probeUri(batch.currentFileUri)
+            } else {
+                null
+            }
+        }
+        val currentFile = batch.files.getOrNull(batch.currentIndex)
+            ?: batch.files.lastOrNull { it.state == FileCompressionState.IN_PROGRESS }
+        val settingsLines = remember(batch.jobSettings, batch.modeLabel, videoMeta, batch.videoEngine) {
+            CompressJobSummary.lines(
+                batch.jobSettings,
+                batch.modeLabel,
+                videoMeta,
+                batch.videoEngine,
+            )
+        }
         Column(Modifier.padding(padding)) {
             AtticusProgressScreen(
                 title = "Compressing files",
                 subtitle = "${batch.modeLabel} · $currentName · $rateText$phaseHint",
                 progress = fraction,
-                onCancel = {
-                    if (!cancelArmed) {
-                        cancelArmed = true
+                fileUri = batch.currentFileUri,
+                sourceUri = currentFile?.sourceUri ?: batch.currentFileUri,
+                fileKind = batch.currentFileKind,
+                durationMs = batch.currentDurationMs,
+                encodeOutputPath = currentFile?.encodeOutputPath,
+                finishedOutputPath = currentFile?.finishedOutputPath,
+                settingsLines = settingsLines,
+                currentPercent = currentPct,
+                showCancelConfirmation = showCancelConfirmation,
+                cancelInProgress = cancelInProgress,
+                cancelResultMessage = cancelResultMessage,
+                onRequestCancel = { showCancelConfirmation = true },
+                onDeclineCancel = { showCancelConfirmation = false },
+                onConfirmCancel = {
+                    showCancelConfirmation = false
+                    cancelInProgress = true
+                    CompressionStatus.requestCancel()
+                    WorkManager.getInstance(context).cancelUniqueWork(CompressionWorker.WORK_NAME)
+                    scope.launch {
+                        val wm = WorkManager.getInstance(context)
+                        val infos = withTimeoutOrNull(15_000) {
+                            wm.getWorkInfosForUniqueWorkFlow(CompressionWorker.WORK_NAME)
+                                .filter { list ->
+                                    val state = list.firstOrNull()?.state
+                                    state == WorkInfo.State.CANCELLED ||
+                                        state == WorkInfo.State.SUCCEEDED ||
+                                        state == WorkInfo.State.FAILED ||
+                                        list.isEmpty()
+                                }
+                                .first()
+                        }
+                        val state = infos?.firstOrNull()?.state
+                        val hadCancelledFile = CompressionStatus.batch.value?.files?.any {
+                            it.state == FileCompressionState.CANCELLED
+                        } == true
+                        cancelInProgress = false
+                        cancelResultMessage = when {
+                            state == WorkInfo.State.CANCELLED || hadCancelledFile ->
+                                "Compression was cancelled. Any finished files were kept."
+                            state == WorkInfo.State.SUCCEEDED ->
+                                "Compression finished before it could be stopped."
+                            state == WorkInfo.State.FAILED ->
+                                "Compression stopped due to an error."
+                            infos == null ->
+                                "Stop requested. Compression may still be winding down."
+                            else ->
+                                "Compression is no longer running."
+                        }
+                    }
+                },
+                onDismissCancelResult = {
+                    cancelResultMessage = null
+                    if (finished != null) {
+                        onShowComplete()
                     } else {
-                        onCancelConfirmed()
+                        CompressionStatus.clear()
+                        onCompressionStopped()
                     }
                 },
             )
-            if (cancelArmed) {
-                Text(
-                    "Tap Cancel again to stop. Finished files are kept.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
-            }
         }
     }
 }

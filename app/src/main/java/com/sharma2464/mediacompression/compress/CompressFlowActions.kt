@@ -1,8 +1,10 @@
 package com.sharma2464.mediacompression.compress
 
-import androidx.media3.common.MimeTypes
+import com.sharma2464.mediacompression.compress.VideoCodecMime.codecFromMime
+import com.sharma2464.mediacompression.compress.VideoCodec
 import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.settings.QualityPresetConfig
+import java.io.File
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -12,6 +14,7 @@ class CompressFlowActions(
     private val current: () -> CompressJobSettings,
     private val onChange: (CompressJobSettings) -> Unit,
     private val meta: VideoMetadata?,
+    private val videoFile: File? = null,
 ) {
     private val originalMb: Float
         get() = originalSizeBytes / (1024f * 1024f).coerceAtLeast(0.01f)
@@ -56,11 +59,14 @@ class CompressFlowActions(
                 },
             )
         }
-        onChange(next)
+        onChange(autoAdjustForTarget(next))
     }
 
     fun setTargetSize(mb: Float) {
-        onChange(current().copy(targetSizeMb = mb.coerceAtLeast(0.1f), platformTarget = null))
+        val next = autoAdjustForTarget(
+            current().copy(targetSizeMb = mb.coerceAtLeast(0.1f), platformTarget = null),
+        )
+        onChange(next)
     }
 
     fun setTargetSizePreview(mb: Float) {
@@ -68,11 +74,12 @@ class CompressFlowActions(
     }
 
     fun setVideoCodec(mime: String) {
-        val codec = when (mime) {
-            MimeTypes.VIDEO_H264 -> VideoCodec.H264
-            else -> VideoCodec.H265
-        }
-        onChange(current().copy(videoCodec = codec))
+        onChange(
+            current().copy(
+                videoCodecMime = mime,
+                videoCodec = VideoCodecMime.codecFromMime(mime),
+            ),
+        )
     }
 
     fun setResolution(shortSide: Int) {
@@ -100,6 +107,7 @@ class CompressFlowActions(
             30 -> FrameRateChoice.FPS_30
             24 -> FrameRateChoice.FPS_24
             15 -> FrameRateChoice.FPS_15
+            10 -> FrameRateChoice.FPS_10
             else -> FrameRateChoice.ORIGINAL
         }
         onChange(current().copy(frameRate = choice))
@@ -121,9 +129,56 @@ class CompressFlowActions(
         onChange(current().copy(volumePercent = (volume * 100f).roundToInt().coerceIn(0, 200)))
     }
 
+    fun setAudioFormat(format: AudioFormatChoice) {
+        onChange(current().copy(audioFormat = format))
+    }
+
     fun acceptAllSuggestions(ui: CompressFlowUiState, file: java.io.File?) {
         val m = meta ?: return
         if (file == null) return
         onChange(ui.suggestedSettings(current(), m, file))
+    }
+
+    private fun autoAdjustForTarget(job: CompressJobSettings): CompressJobSettings {
+        val m = meta ?: return job
+        val file = videoFile ?: return job
+        if (m.durationMs <= 0 || job.targetSizeMb <= 0f) return job
+        val bytes = (job.targetSizeMb * 1024 * 1024).toLong()
+        val planned = VideoEncodePlanner.planWithDuration(file, job, m, bytes)
+        var next = job
+        val plannedFps = planned.outputFps
+        if (plannedFps != null && plannedFps > 0) {
+            next = next.copy(
+                frameRate = when (plannedFps) {
+                    60 -> FrameRateChoice.FPS_60
+                    30 -> FrameRateChoice.FPS_30
+                    24 -> FrameRateChoice.FPS_24
+                    15 -> FrameRateChoice.FPS_15
+                    10 -> FrameRateChoice.FPS_10
+                    else -> FrameRateChoice.ORIGINAL
+                },
+            )
+        }
+        if (planned.outputVideoHeight > 0) {
+            next = next.copy(resolution = resolutionChoiceFor(m, planned.outputVideoHeight))
+        }
+        if (!job.removeAudio && planned.audioBitrateBps > 0) {
+            next = next.copy(audioBitrateKbps = planned.audioBitrateBps / 1000)
+        }
+        return next
+    }
+
+    private fun resolutionChoiceFor(meta: VideoMetadata, targetHeight: Int): ResolutionChoice {
+        if (targetHeight <= 0 || targetHeight >= meta.height) return ResolutionChoice.ORIGINAL
+        val longEdge = maxOf(meta.width, meta.height)
+        val newLong = (longEdge.toLong() * targetHeight / meta.height.coerceAtLeast(1)).toInt()
+        return when {
+            newLong >= longEdge -> ResolutionChoice.ORIGINAL
+            newLong >= 1080 -> ResolutionChoice.P1080
+            newLong >= 720 -> ResolutionChoice.P720
+            newLong >= 540 -> ResolutionChoice.P540
+            newLong >= 480 -> ResolutionChoice.P480
+            else -> ResolutionChoice.QUARTER
+        }
     }
 }

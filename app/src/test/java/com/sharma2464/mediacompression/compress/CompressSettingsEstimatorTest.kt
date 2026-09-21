@@ -22,4 +22,19 @@ class CompressSettingsEstimatorTest {
         tmp.delete()
         assertTrue(est < 50_000)
     }
+
+    @Test
+    fun target_cap_limits_batch_estimate() {
+        val tmp = File.createTempFile("est", ".bin")
+        tmp.writeBytes(ByteArray(10_000_000))
+        val settings = CompressJobSettings(targetSizeMb = 5f, presetTier = PresetTier.MEDIUM)
+        val est = CompressSettingsEstimator.estimatedBytesAfter(
+            listOf(tmp to FileKind.VIDEO),
+            CompressionMode.ADAPTIVE,
+            settings,
+            primaryVideo = null,
+        )
+        tmp.delete()
+        assertTrue(est <= 5f * 1024 * 1024)
+    }
 }

@@ -1,0 +1,24 @@
+---
+description: Commit and push to origin after every turn that changes the repo
+alwaysApply: true
+---
+
+# Git push after every turn
+
+When this assistant **finishes a turn** and the working tree has **any** code changes (modified or new files under the repo, excluding deliberate local-only paths like `screenshots/` unless the user asked to include them):
+
+1. **Do not leave changes only local.** Sync to `origin` is mandatory for that turn.
+2. **Commit** all relevant changes with a clear message (1–2 sentences, why-focused). Do not commit secrets (`.env`, credentials, keys).
+3. **Push** to the tracked upstream branch (usually `origin` + current branch, e.g. `git push origin HEAD`). Use `-u` only when the branch has no upstream yet.
+4. Run `git status` after push and report success or the exact error (auth, hooks, conflicts).
+5. If push fails, fix what you can in the same turn (rebase/merge conflicts, hook failures) and retry once; if still blocked, tell the user what blocked push.
+
+**Exceptions (only these):**
+
+- The user explicitly says **do not push** or **do not commit** for that turn.
+- The turn made **no** file changes (questions-only, read-only review).
+- Push would require **force-push to `main`/`master`** — never force-push; stop and ask the user.
+
+This rule **overrides** generic “do not push unless asked” guidance **for this repository**.
+
+**Never** change `git config`, skip hooks (`--no-verify`), or amend unless the user’s commit rules allow it.

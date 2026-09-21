@@ -13,6 +13,16 @@ data class VideoMetadata(
 )
 
 object VideoMetadataProbe {
+    fun probeUri(uriString: String?): VideoMetadata? {
+        if (uriString.isNullOrBlank()) return null
+        return if (uriString.startsWith("file://")) {
+            val path = uriString.removePrefix("file://")
+            probe(File(path))
+        } else {
+            null
+        }
+    }
+
     fun probe(file: File): VideoMetadata? {
         if (!file.isFile) return null
         val retriever = MediaMetadataRetriever()
@@ -63,6 +73,7 @@ object VideoMetadataProbe {
         FrameRateChoice.FPS_30 -> 30
         FrameRateChoice.FPS_24 -> 24
         FrameRateChoice.FPS_15 -> 15
+        FrameRateChoice.FPS_10 -> 10
     }
 
     fun maxLongEdge(meta: VideoMetadata, choice: ResolutionChoice): Int? {

@@ -1,5 +1,6 @@
 package com.sharma2464.mediacompression.compress
 
+import androidx.media3.common.MimeTypes
 import com.sharma2464.mediacompression.settings.CompressionMode
 import java.io.File
 
@@ -27,7 +28,8 @@ object CompressSettingsMapper {
         var outputVideoHeight: Int? = null
         var plannedFps: Int? = null
         var plannedAudioBps: Int? = null
-        var videoCodec = settings.videoCodec
+        var videoCodec = VideoCodecMime.codecFromMime(settings.effectiveVideoMime())
+        val outputMime = settings.effectiveVideoMime()
 
         val targetBytes = (settings.targetSizeMb * 1024 * 1024).toLong()
             .takeIf { settings.targetSizeMb > 0f }
@@ -102,6 +104,12 @@ object CompressSettingsMapper {
             videoMeta?.let { VideoMetadataProbe.targetDimensions(it, resolution) } ?: (null to null)
         }
 
+        val (preferAudioPassthrough, audioMime) = when (settings.audioFormat) {
+            AudioFormatChoice.ORIGINAL_PASSTHROUGH -> true to null
+            AudioFormatChoice.AAC -> false to MimeTypes.AUDIO_AAC
+            AudioFormatChoice.OPUS -> false to MimeTypes.AUDIO_OPUS
+        }
+
         return CompressionProfile(
             mode = mode,
             strength = strength,
@@ -119,6 +127,9 @@ object CompressSettingsMapper {
             outputVideoHeight = outputVideoHeight,
             preferFfmpeg = false,
             targetVideoBitrateBps = targetVideoBitrateBps,
+            videoMime = outputMime,
+            audioMime = audioMime,
+            preferAudioPassthrough = preferAudioPassthrough,
         )
     }
 

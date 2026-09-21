@@ -39,6 +39,11 @@ data class CompressionProfile(
     val preferFfmpeg: Boolean = false,
     /** When set (e.g. platform size cap), overrides factor-based video bitrate. */
     val targetVideoBitrateBps: Int? = null,
+    /** Output video MIME; overrides [videoCodec] when set. */
+    val videoMime: String? = null,
+    /** When set, transcode audio to this MIME (e.g. AAC/Opus). */
+    val audioMime: String? = null,
+    val preferAudioPassthrough: Boolean = false,
 ) {
     fun estimatedSizeRatio(kind: FileKind?): Double {
         if (mode == CompressionMode.LOSSLESS_ONLY) {

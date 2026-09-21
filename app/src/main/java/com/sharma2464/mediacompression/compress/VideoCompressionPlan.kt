@@ -23,10 +23,7 @@ object VideoCompressionPlanner {
         plannedHeight: Int,
         plannedFps: Int?,
     ): VideoCompressionPlan {
-        var mime = when (settings.videoCodec) {
-            VideoCodec.H265 -> MimeTypes.VIDEO_H265
-            VideoCodec.H264 -> MimeTypes.VIDEO_H264
-        }
+        var mime = settings.effectiveVideoMime()
         var outputHeight = if (plannedHeight > 0) plannedHeight else 0
         var outputFps = plannedFps?.takeIf { it > 0 } ?: 0
         val warnings = mutableListOf<String>()

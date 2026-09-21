@@ -55,6 +55,7 @@ data class CompressFlowUiState(
                     30 -> FrameRateChoice.FPS_30
                     24 -> FrameRateChoice.FPS_24
                     15 -> FrameRateChoice.FPS_15
+                    10 -> FrameRateChoice.FPS_10
                     else -> FrameRateChoice.ORIGINAL
                 },
             )
@@ -104,10 +105,7 @@ data class CompressFlowUiState(
                 }
             }
             val targetFps = meta?.let { VideoMetadataProbe.targetFps(it, settings.frameRate) } ?: 0
-            val mime = when (settings.videoCodec) {
-                VideoCodec.H265 -> MimeTypes.VIDEO_H265
-                VideoCodec.H264 -> MimeTypes.VIDEO_H264
-            }
+            val mime = settings.effectiveVideoMime()
             val audioBps = when {
                 settings.removeAudio -> 0
                 settings.audioBitrateKbps != null -> settings.audioBitrateKbps * 1000
@@ -124,13 +122,14 @@ data class CompressFlowUiState(
             val estMb = estimatedBytes / (1024f * 1024f)
             val targetMb = settings.targetSizeMb
             val videoBr = targetBitrateBps(targetMb, duration, audioBps, settings.removeAudio, targetH, targetFps, mime, origBr)
+            val probedAudio = videoFile?.let { VideoTrackProbe.probe(it).audio?.bitrate } ?: 0
 
             return CompressFlowUiState(
                 originalSize = previewTotalBytes,
                 originalWidth = w,
                 originalHeight = h,
                 originalBitrate = origBr,
-                originalAudioBitrate = 128_000,
+                originalAudioBitrate = probedAudio.takeIf { it > 0 } ?: 128_000,
                 originalFps = fps,
                 durationMs = duration,
                 fileCount = fileCount,

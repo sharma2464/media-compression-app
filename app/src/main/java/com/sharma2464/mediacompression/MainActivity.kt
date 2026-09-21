@@ -41,7 +41,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.sharma2464.mediacompression.compress.CompressionStatus
+import com.sharma2464.mediacompression.compress.CompressionWorker
 import com.sharma2464.mediacompression.scan.compressibleFilesInSelection
 import com.sharma2464.mediacompression.scan.hasFullStorageAccess
 import com.sharma2464.mediacompression.settings.AppSettings
@@ -49,6 +52,7 @@ import com.sharma2464.mediacompression.settings.atticus.AtticusSettingsHost
 import com.sharma2464.mediacompression.ui.BrowserLoadState
 import com.sharma2464.mediacompression.ui.CompressDialogStage
 import com.sharma2464.mediacompression.ui.CompressionBatchDialog
+import com.sharma2464.mediacompression.ui.CompressionMinimizedBar
 import com.sharma2464.mediacompression.ui.CompressionProgressFab
 import com.sharma2464.mediacompression.ui.FileBrowserViewModel
 import com.sharma2464.mediacompression.ui.HomeScreen
@@ -103,6 +107,25 @@ class MainActivity : ComponentActivity() {
                     var compressDialogStage by remember { mutableStateOf(CompressDialogStage.Preview) }
                     var compressPreviewState by remember {
                         mutableStateOf<com.sharma2464.mediacompression.ui.CompressPreviewState?>(null)
+                    }
+                    var compressionWorkActive by remember { mutableStateOf(false) }
+                    LaunchedEffect(context) {
+                        WorkManager.getInstance(context)
+                            .getWorkInfosForUniqueWorkFlow(CompressionWorker.WORK_NAME)
+                            .collect { infos ->
+                                compressionWorkActive = infos.any {
+                                    it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                                }
+                            }
+                    }
+                    val compressionRunningInBackground = compressionBatch != null || compressionWorkActive
+                    val showMinimizedCompression = !compressDialogVisible && compressionRunningInBackground
+                    fun openCompressionDialog() {
+                        compressDialogStage = when {
+                            compressionFinished != null -> CompressDialogStage.Complete
+                            else -> CompressDialogStage.Progress
+                        }
+                        compressDialogVisible = true
                     }
 
                     val atVolumeRoot = fileBrowserViewModel.isAtVolumeRoot()
@@ -199,12 +222,10 @@ class MainActivity : ComponentActivity() {
                                     horizontalAlignment = Alignment.End,
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    if (compressionBatch != null) {
+                                    if (showMinimizedCompression) {
                                         CompressionProgressFab(
-                                            onOpenProgressDialog = {
-                                                compressDialogStage = CompressDialogStage.Progress
-                                                compressDialogVisible = true
-                                            },
+                                            onOpenProgressDialog = { openCompressionDialog() },
+                                            indeterminate = compressionBatch == null,
                                         )
                                     }
                                     if (tab == Tab.HOME && selected.isEmpty()) {
@@ -246,12 +267,29 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        if (showMinimizedCompression) {
+                            CompressionMinimizedBar(
+                                batch = compressionBatch,
+                                onExpand = { openCompressionDialog() },
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(start = 12.dp, end = 12.dp, bottom = 88.dp),
+                            )
+                        }
+
                         CompressionBatchDialog(
                             visible = compressDialogVisible,
                             stage = compressDialogStage,
                             previewState = compressPreviewState,
                             onDismissPreview = { compressDialogVisible = false },
-                            onMinimizeProgress = { compressDialogVisible = false },
+                            onMinimizeProgress = {
+                                compressDialogVisible = false
+                                if (compressDialogStage != CompressDialogStage.Progress &&
+                                    (compressionBatch != null || compressionWorkActive)
+                                ) {
+                                    compressDialogStage = CompressDialogStage.Progress
+                                }
+                            },
                             onStageChange = {
                                 compressDialogStage = it
                                 if (it == CompressDialogStage.Progress) {

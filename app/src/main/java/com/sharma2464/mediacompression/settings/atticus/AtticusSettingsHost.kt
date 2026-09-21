@@ -8,17 +8,14 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -26,12 +23,9 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -49,9 +43,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Row
-import androidx.compose.runtime.mutableFloatStateOf
+import com.sharma2464.mediacompression.compress.VideoCodecMime
 import com.sharma2464.mediacompression.settings.AppSettings
-import com.sharma2464.mediacompression.settings.QualityPresetConfig
 import com.sharma2464.mediacompression.settings.SettingsScreen
 import com.sharma2464.mediacompression.settings.ThemeMode
 
@@ -66,9 +59,9 @@ fun AtticusSettingsHost(onThemeModeChange: (ThemeMode) -> Unit) {
     when (dest) {
         SettingsDest.Hub -> AtticusSettingsHub(onNavigate = { dest = it }, onThemeModeChange = onThemeModeChange)
         SettingsDest.Display -> AtticusDisplaySettings(onBack = { dest = SettingsDest.Hub })
-        SettingsDest.Presets -> AtticusPresetsSettings(onBack = { dest = SettingsDest.Hub })
-        SettingsDest.Video -> AtticusVideoDefaultsSettings(onBack = { dest = SettingsDest.Hub })
-        SettingsDest.Audio -> AtticusAudioDefaultsSettings(onBack = { dest = SettingsDest.Hub })
+        SettingsDest.Presets -> AtticusPresetsSettingsScreen(onBack = { dest = SettingsDest.Hub })
+        SettingsDest.Video -> AtticusVideoSettingsScreen(onBack = { dest = SettingsDest.Hub })
+        SettingsDest.Audio -> AtticusAudioSettingsScreen(onBack = { dest = SettingsDest.Hub })
         SettingsDest.About -> AtticusAboutSettings(onBack = { dest = SettingsDest.Hub })
         SettingsDest.Legacy -> SettingsScreen(onThemeModeChange = onThemeModeChange)
     }
@@ -79,8 +72,6 @@ private fun AtticusSettingsHub(
     onNavigate: (SettingsDest) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
-    val context = LocalContext.current
-    val settings = remember { AppSettings(context) }
     Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { padding ->
         LazyColumn(Modifier.padding(padding)) {
             item {
@@ -98,11 +89,11 @@ private fun AtticusSettingsHub(
                 }
             }
             item { SectionTitle("Compressor") }
-            item { NavRow("Display", "Bitrate labels, target-size chips") { onNavigate(SettingsDest.Display) } }
-            item { NavRow("Presets", "High / Medium / Low & platform limits") { onNavigate(SettingsDest.Presets) } }
-            item { NavRow("Video defaults", "Codec, resolution, FPS, size ratio") { onNavigate(SettingsDest.Video) } }
-            item { NavRow("Audio defaults", "Bitrate, mute, volume") { onNavigate(SettingsDest.Audio) } }
-            item { NavRow("About & codecs", "Device info, enable all codecs") { onNavigate(SettingsDest.About) } }
+            item { NavRow("Display", "Bitrate, chips, filename builder") { onNavigate(SettingsDest.Display) } }
+            item { NavRow("Presets", "Quality & platform target sizes") { onNavigate(SettingsDest.Presets) } }
+            item { NavRow("Video", "Default codec, resolution, FPS, size ratio") { onNavigate(SettingsDest.Video) } }
+            item { NavRow("Audio", "Default bitrate, mute, volume") { onNavigate(SettingsDest.Audio) } }
+            item { NavRow("About & codecs", "Device info, developer codecs") { onNavigate(SettingsDest.About) } }
             item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
             item { SectionTitle("App") }
             item { NavRow("Storage & compression", "Mode, output folder, file types") { onNavigate(SettingsDest.Legacy) } }
@@ -148,118 +139,8 @@ private fun AtticusDisplaySettings(onBack: () -> Unit) {
                 })
             },
         )
-    }
-}
-
-@Composable
-private fun AtticusPresetsSettings(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val settings = remember(context) { AppSettings(context) }
-    var high by remember { mutableStateOf(settings.highQualityPreset) }
-    var medium by remember { mutableStateOf(settings.mediumQualityPreset) }
-    var low by remember { mutableStateOf(settings.lowQualityPreset) }
-    SettingsScaffold("Presets", onBack) {
-        PresetEditor("High", high) {
-            high = it
-            settings.highQualityPreset = it
-        }
-        PresetEditor("Medium", medium) {
-            medium = it
-            settings.mediumQualityPreset = it
-        }
-        PresetEditor("Low", low) {
-            low = it
-            settings.lowQualityPreset = it
-        }
-        OutlinedButton(
-            onClick = {
-                settings.resetQualityPresets()
-                high = settings.highQualityPreset
-                medium = settings.mediumQualityPreset
-                low = settings.lowQualityPreset
-            },
-            modifier = Modifier.padding(16.dp),
-        ) { Text("Reset quality presets") }
-        Text(
-            "Platform target sizes: ${settings.targetSizePresets.size} presets (GitHub, Discord, …)",
-            modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedButton(
-            onClick = { settings.resetTargetSizePresets() },
-            modifier = Modifier.padding(horizontal = 16.dp),
-        ) { Text("Reset platform size presets") }
-    }
-}
-
-@Composable
-private fun PresetEditor(label: String, config: QualityPresetConfig, onChange: (QualityPresetConfig) -> Unit) {
-    var ratio by remember(config) { mutableFloatStateOf(config.sizeRatio) }
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(label, fontWeight = FontWeight.Bold)
-        Text("Size ratio: ${"%.0f".format(ratio * 100)}% of original", style = MaterialTheme.typography.bodySmall)
-        Slider(
-            value = ratio,
-            onValueChange = {
-                ratio = it
-                onChange(config.copy(sizeRatio = it))
-            },
-            valueRange = 0.1f..0.9f,
-        )
-    }
-}
-
-@Composable
-private fun AtticusVideoDefaultsSettings(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val settings = remember(context) { AppSettings(context) }
-    var cfg by remember { mutableStateOf(settings.defaultVideoConfig) }
-    SettingsScaffold("Video defaults", onBack) {
-        Text(
-            "Applied when you open compress on a new video.",
-            modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Column(Modifier.padding(16.dp)) {
-            Text("Default size ratio: ${"%.0f".format(cfg.defaultSizeRatio * 100)}%")
-            Slider(
-                value = cfg.defaultSizeRatio,
-                onValueChange = {
-                    cfg = cfg.copy(defaultSizeRatio = it)
-                    settings.defaultVideoConfig = cfg
-                },
-                valueRange = 0.1f..0.9f,
-            )
-        }
-    }
-}
-
-@Composable
-private fun AtticusAudioDefaultsSettings(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val settings = remember(context) { AppSettings(context) }
-    var cfg by remember { mutableStateOf(settings.defaultAudioConfig) }
-    SettingsScaffold("Audio defaults", onBack) {
-        ListItem(
-            headlineContent = { Text("Mute audio by default") },
-            trailingContent = {
-                Switch(cfg.defaultRemoveAudio, onCheckedChange = {
-                    cfg = cfg.copy(defaultRemoveAudio = it)
-                    settings.defaultAudioConfig = cfg
-                })
-            },
-        )
-        Column(Modifier.padding(16.dp)) {
-            Text("Default volume: ${cfg.defaultVolumePercent}%")
-            Slider(
-                value = cfg.defaultVolumePercent.toFloat(),
-                onValueChange = {
-                    cfg = cfg.copy(defaultVolumePercent = it.toInt())
-                    settings.defaultAudioConfig = cfg
-                },
-                valueRange = 0f..200f,
-            )
-        }
+        HorizontalDivider()
+        AtticusFilenameBuilderSection(settings)
     }
 }
 
@@ -270,7 +151,10 @@ private fun AtticusAboutSettings(onBack: () -> Unit) {
     var codecTaps by remember { mutableIntStateOf(0) }
     var showUnlock by remember { mutableStateOf(false) }
     var checks by remember { mutableStateOf(List(5) { false }) }
-    val codecs = remember { listDeviceVideoEncoders() }
+    var allCodecsOn by remember { mutableStateOf(settings.allCodecsEnabled) }
+    val codecs = remember(allCodecsOn) {
+        if (allCodecsOn) VideoCodecMime.deviceVideoEncoders() else listDeviceVideoEncoders()
+    }
     SettingsScaffold("About", onBack) {
         ListItem(
             headlineContent = { Text("Device") },
@@ -288,10 +172,11 @@ private fun AtticusAboutSettings(onBack: () -> Unit) {
         if (settings.allCodecsUnlocked) {
             ListItem(
                 headlineContent = { Text("Enable all codecs") },
-                supportingContent = { Text("Developer mode — may be unstable") },
+                supportingContent = { Text("Developer mode — exposes every hardware video encoder in the compress UI") },
                 trailingContent = {
-                    Switch(settings.allCodecsEnabled, onCheckedChange = {
-                        if (it) settings.enableAllCodecsFeature() else settings.disableAllCodecsFeature()
+                    Switch(allCodecsOn, onCheckedChange = {
+                        allCodecsOn = it
+                        settings.allCodecsEnabled = it
                     })
                 },
             )
@@ -335,6 +220,7 @@ private fun AtticusAboutSettings(onBack: () -> Unit) {
                     onClick = {
                         if (checks.all { it }) {
                             settings.enableAllCodecsFeature()
+                            allCodecsOn = true
                             showUnlock = false
                         }
                     },
@@ -343,29 +229,6 @@ private fun AtticusAboutSettings(onBack: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { showUnlock = false }) { Text("Cancel") } },
         )
-    }
-}
-
-@Composable
-private fun SettingsScaffold(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-        ) { content() }
     }
 }
 

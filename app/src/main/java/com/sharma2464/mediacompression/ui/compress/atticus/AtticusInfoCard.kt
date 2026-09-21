@@ -106,7 +106,7 @@ private fun EstimatedBlock(state: CompressFlowUiState, modifier: Modifier, align
             Text("${targetW}×${targetH} • ${targetFps}fps", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary.copy(0.8f))
         }
         val originalMb = state.originalSize / (1024f * 1024f)
-        val estMb = max(state.targetSizeMb, state.minimumSizeMb)
+        val estMb = state.estimatedSizeMb.coerceAtLeast(0.01f)
         if (originalMb > 0) {
             val pct = ((1f - estMb / originalMb) * 100f).toInt()
             Text(

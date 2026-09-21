@@ -93,13 +93,14 @@ class LargestFilesE2ETest {
         }
 
         composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.waitUntil(timeoutMillis = 10_000) {
+        composeRule.onNodeWithText("Yes").performClick()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("Tap Cancel again", substring = true).assertExists()
+                composeRule.onNodeWithText("OK").assertExists()
                 true
             }.getOrDefault(false)
         }
-        composeRule.onNodeWithText("Cancel").performClick()
+        composeRule.onNodeWithText("OK").performClick()
     }
 
     companion object {

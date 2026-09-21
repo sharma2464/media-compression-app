@@ -14,7 +14,7 @@ enum class PlatformPreset(val label: String, val hint: String, val maxBytes: Lon
     TELEGRAM("Telegram", "50 MB", 50L * 1024 * 1024),
 }
 
-enum class VideoCodec { H264, H265 }
+enum class VideoCodec { H264, H265, AV1, VP9, VP8, MPEG4 }
 
 enum class ResolutionChoice {
     ORIGINAL,
@@ -32,6 +32,13 @@ enum class FrameRateChoice {
     FPS_30,
     FPS_24,
     FPS_15,
+    FPS_10,
+}
+
+enum class AudioFormatChoice {
+    AAC,
+    OPUS,
+    ORIGINAL_PASSTHROUGH,
 }
 
 data class CompressJobSettings(
@@ -41,11 +48,14 @@ data class CompressJobSettings(
     val targetSizeMb: Float = 10f,
     val platformTarget: PlatformPreset? = null,
     val videoCodec: VideoCodec = VideoCodec.H265,
+    /** When set, overrides [videoCodec] for encode (e.g. AV1 from developer mode). */
+    val videoCodecMime: String? = null,
     val resolution: ResolutionChoice = ResolutionChoice.ORIGINAL,
     val frameRate: FrameRateChoice = FrameRateChoice.ORIGINAL,
     val removeAudio: Boolean = false,
     val audioBitrateKbps: Int? = null,
     val volumePercent: Int = 100,
+    val audioFormat: AudioFormatChoice = AudioFormatChoice.AAC,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("qualitySlider", qualitySlider)
@@ -53,11 +63,13 @@ data class CompressJobSettings(
         put("targetSizeMb", targetSizeMb.toDouble())
         put("platformTarget", platformTarget?.name)
         put("videoCodec", videoCodec.name)
+        if (videoCodecMime != null) put("videoCodecMime", videoCodecMime)
         put("resolution", resolution.name)
         put("frameRate", frameRate.name)
         put("removeAudio", removeAudio)
         if (audioBitrateKbps != null) put("audioBitrateKbps", audioBitrateKbps)
         put("volumePercent", volumePercent)
+        put("audioFormat", audioFormat.name)
     }.toString()
 
     companion object {
@@ -74,11 +86,14 @@ data class CompressJobSettings(
                     platformTarget = o.optString("platformTarget", "").takeIf { it.isNotEmpty() }
                         ?.let { PlatformPreset.valueOf(it) },
                     videoCodec = VideoCodec.valueOf(o.optString("videoCodec", VideoCodec.H265.name)),
+                    videoCodecMime = o.optString("videoCodecMime", "").takeIf { it.isNotEmpty() },
                     resolution = ResolutionChoice.valueOf(o.optString("resolution", ResolutionChoice.ORIGINAL.name)),
                     frameRate = FrameRateChoice.valueOf(o.optString("frameRate", FrameRateChoice.ORIGINAL.name)),
                     removeAudio = o.optBoolean("removeAudio", false),
                     audioBitrateKbps = if (o.has("audioBitrateKbps")) o.getInt("audioBitrateKbps") else null,
                     volumePercent = o.optInt("volumePercent", 100),
+                    audioFormat = o.optString("audioFormat", AudioFormatChoice.AAC.name)
+                        .let { runCatching { AudioFormatChoice.valueOf(it) }.getOrDefault(AudioFormatChoice.AAC) },
                 )
             }.getOrNull()
         }

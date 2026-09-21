@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.sharma2464.mediacompression.data.AppDatabase
+import com.sharma2464.mediacompression.data.FileKind
 import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.compress.CompressionStrength
 import kotlinx.coroutines.CancellationException
@@ -26,25 +27,52 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
 
         val job = settings.sessionCompressJobSettings ?: CompressJobSettings.DEFAULT
         val modeLabel = CompressSettingsMapper.summaryLabel(job)
-        CompressionStatus.startBatch(queued.map { it.displayName to it.sizeBytes }, modeLabel)
+        CompressionStatus.startBatch(
+            queued.map { it.displayName to it.sizeBytes },
+            modeLabel,
+            jobSettings = job,
+            videoEngine = settings.videoEngine,
+        )
 
         val finishedItems = mutableListOf<CompressionFinishedItem>()
         try {
             for ((index, entry) in queued.withIndex()) {
-                CompressionStatus.updateCurrentFile(index, percent = 0, rateBytesPerSec = 0)
+                if (CompressionStatus.cancelRequested.value) {
+                    break
+                }
+                val durationMs = if (entry.kind == FileKind.VIDEO) {
+                    VideoMetadataProbe.probeUri(entry.uri)?.durationMs
+                } else {
+                    null
+                }
+                CompressionStatus.updateCurrentFile(
+                    index,
+                    percent = 0,
+                    rateBytesPerSec = 0,
+                    fileUri = entry.uri,
+                    fileKind = entry.kind,
+                    durationMs = durationMs,
+                )
                 CompressionForegroundService.updateNotification(applicationContext, index + 1, queued.size, entry.displayName)
 
                 var lastProcessedBytes = 0L
                 var lastTickMs = System.currentTimeMillis()
                 try {
-                    val output = pipeline.process(entry) { percent ->
+                    val output = pipeline.process(entry, fileIndex = index) { percent ->
                         val now = System.currentTimeMillis()
                         val processedBytes = entry.sizeBytes * percent / 100
                         val dtMs = (now - lastTickMs).coerceAtLeast(1)
                         val rate = (processedBytes - lastProcessedBytes) * 1000 / dtMs
                         lastProcessedBytes = processedBytes
                         lastTickMs = now
-                        CompressionStatus.updateCurrentFile(index, percent, rate)
+                        CompressionStatus.updateCurrentFile(
+                            index,
+                            percent,
+                            rate,
+                            fileUri = entry.uri,
+                            fileKind = entry.kind,
+                            durationMs = durationMs,
+                        )
                     }
                     output?.let { result ->
                         finishedItems += CompressionFinishedItem(
@@ -53,6 +81,8 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                             originalBytes = result.originalBytes,
                             compressedBytes = result.compressedBytes,
                             isVideo = result.isVideo,
+                            sourceUri = entry.uri,
+                            fileKind = entry.kind,
                         )
                     }
                     CompressionStatus.markDone(index)

@@ -31,7 +31,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MimeTypes
+import com.sharma2464.mediacompression.compress.CompressDefaults
 import com.sharma2464.mediacompression.compress.CompressFlowActions
+import com.sharma2464.mediacompression.compress.VideoCodecMime
+import com.sharma2464.mediacompression.compress.effectiveVideoMime
 import com.sharma2464.mediacompression.compress.initialCompressTargetMb
 import com.sharma2464.mediacompression.compress.CompressFlowUiState
 import com.sharma2464.mediacompression.compress.CompressJobSettings
@@ -72,20 +75,15 @@ fun CompressFlowPreview(
     val sizingBytes = remember(state, primaryVideo, primaryPhoto) {
         primaryVideo?.length() ?: primaryPhoto?.length() ?: state.totalBytes
     }
-    var jobSettings by remember(state.items, sizingBytes, hasVideo) {
-        val sizeMb = sizingBytes / (1024f * 1024f).coerceAtLeast(0.01f)
-        val ratio = if (hasVideo) {
-            settings.defaultVideoConfig.defaultSizeRatio
-        } else {
-            0.4f
-        }
-        mutableStateOf(
-            CompressJobSettings.DEFAULT.copy(
-                targetSizeMb = initialCompressTargetMb(sizingBytes, hasVideo, ratio),
-            ),
-        )
-    }
     val videoMeta = remember(primaryVideo) { primaryVideo?.let { VideoMetadataProbe.probe(it) } }
+    val supportedCodecs = remember(settings.allCodecsEnabled) {
+        VideoCodecMime.supportedCodecs(settings.allCodecsEnabled)
+    }
+    var jobSettings by remember(state.items, sizingBytes, hasVideo, videoMeta, supportedCodecs) {
+        val ratio = if (hasVideo) settings.defaultVideoConfig.defaultSizeRatio else 0.4f
+        val targetMb = initialCompressTargetMb(sizingBytes, hasVideo, ratio)
+        mutableStateOf(CompressDefaults.initialJobSettings(settings, targetMb, videoMeta))
+    }
     val lossless = settings.compressionMode == CompressionMode.LOSSLESS_ONLY
     val estimated = remember(pairs, jobSettings, lossless, primaryVideo, primaryPhoto) {
         CompressSettingsEstimator.estimatedBytesAfter(
@@ -106,18 +104,25 @@ fun CompressFlowPreview(
             meta = videoMeta,
             videoFile = primaryVideo,
             estimatedBytes = estimated,
-            supportedCodecs = listOf(MimeTypes.VIDEO_H265, MimeTypes.VIDEO_H264),
+            supportedCodecs = supportedCodecs,
             showBitrate = settings.showBitrate,
         )
     }
-    val actions = remember(videoMeta, sizingBytes) {
+    val actions = remember(videoMeta, sizingBytes, primaryVideo) {
         CompressFlowActions(
             appSettings = settings,
             originalSizeBytes = sizingBytes,
             current = { jobSettings },
             onChange = { jobSettings = it },
             meta = videoMeta,
+            videoFile = primaryVideo,
         )
+    }
+    fun finalizedJob(): CompressJobSettings {
+        val meta = videoMeta
+        val file = primaryVideo
+        if (meta == null || file == null || meta.durationMs <= 0) return jobSettings
+        return uiState.suggestedSettings(jobSettings, meta, file)
     }
 
     val pickTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -188,7 +193,7 @@ fun CompressFlowPreview(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 androidx.compose.material3.Button(
-                    onClick = { onStart(jobSettings) },
+                    onClick = { onStart(finalizedJob()) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
@@ -203,7 +208,7 @@ fun CompressFlowPreview(
                     actions = actions,
                     hasVideo = hasVideo,
                     videoFile = primaryVideo,
-                    onStart = { onStart(jobSettings) },
+                    onStart = { onStart(finalizedJob()) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

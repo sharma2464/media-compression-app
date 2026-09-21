@@ -20,6 +20,7 @@ internal object VideoEncoderFactories {
     fun createWrappingFactory(
         context: Context,
         videoBitrateBps: Int,
+        audioBitrateBps: Int,
         videoMimeType: String,
         targetFps: Float?,
         audioPassthrough: Boolean,
@@ -50,7 +51,12 @@ internal object VideoEncoderFactories {
 
         return object : Codec.EncoderFactory {
             override fun createForAudioEncoding(format: Format): Codec {
-                return primary.createForAudioEncoding(format)
+                val modified = if (!audioPassthrough && audioBitrateBps > 0) {
+                    format.buildUpon().setAverageBitrate(audioBitrateBps).setPeakBitrate(audioBitrateBps).build()
+                } else {
+                    format
+                }
+                return primary.createForAudioEncoding(modified)
             }
 
             @Throws(ExportException::class)

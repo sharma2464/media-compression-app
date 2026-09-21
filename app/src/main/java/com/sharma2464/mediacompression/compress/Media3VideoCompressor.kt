@@ -5,9 +5,9 @@ import android.media.MediaMetadataRetriever
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.Clock
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
-import androidx.media3.common.util.Clock
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultAssetLoaderFactory
 import androidx.media3.transformer.DefaultDecoderFactory
@@ -17,6 +17,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.sharma2464.mediacompression.compress.VideoCodecMime.toMime
 import com.sharma2464.mediacompression.settings.CompressionMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -71,18 +72,26 @@ internal class Media3VideoCompressor(private val context: Context) {
 
             val videoBitrate = profile.targetVideoBitrateBps
                 ?: targetBitrate(input, profile.videoBitrateFactor)
-            val videoMime = when (profile.videoCodec) {
-                VideoCodec.H264 -> MimeTypes.VIDEO_H264
-                VideoCodec.H265 -> MimeTypes.VIDEO_H265
+            val videoMime = profile.videoMime?.takeIf { it.isNotBlank() }
+                ?: profile.videoCodec.toMime()
+            val sourceAudioBitrate = probe.audio?.bitrate ?: 0
+            val audioBitrateToUse = when {
+                profile.removeAudio -> 0
+                profile.audioBitrateBps > 0 -> profile.audioBitrateBps
+                sourceAudioBitrate > 0 -> sourceAudioBitrate
+                else -> 128_000
             }
-            val audioPassthrough = VideoTrackProbe.canPassthroughAudio(
-                probe,
-                profile.removeAudio,
-                profile.volumePercent,
-            )
+            val audioPassthrough = profile.preferAudioPassthrough &&
+                VideoTrackProbe.canPassthroughAudio(
+                    probe,
+                    profile.removeAudio,
+                    profile.volumePercent,
+                ) && (profile.audioBitrateBps <= 0 || profile.audioBitrateBps == sourceAudioBitrate)
+
             val encoderFactory = VideoEncoderFactories.createWrappingFactory(
                 context = context,
                 videoBitrateBps = videoBitrate,
+                audioBitrateBps = audioBitrateToUse,
                 videoMimeType = videoMime,
                 targetFps = profile.targetFps?.toFloat(),
                 audioPassthrough = audioPassthrough,
@@ -92,14 +101,15 @@ internal class Media3VideoCompressor(private val context: Context) {
                 .build()
 
             val editedItem = buildEditedMediaItem(input, profile, origW, origH)
+            val shouldIncludeAudio = !profile.removeAudio && probe.hasAudio
 
             val transformerBuilder = Transformer.Builder(context)
                 .setVideoMimeType(videoMime)
                 .setMaxDelayBetweenMuxerSamplesMs(30_000)
                 .setAssetLoaderFactory(DefaultAssetLoaderFactory(context, decoderFactory, Clock.DEFAULT))
                 .setEncoderFactory(encoderFactory)
-            if (!audioPassthrough && !profile.removeAudio) {
-                transformerBuilder.setAudioMimeType(MimeTypes.AUDIO_AAC)
+            if (!audioPassthrough && shouldIncludeAudio) {
+                transformerBuilder.setAudioMimeType(profile.audioMime ?: MimeTypes.AUDIO_AAC)
             }
             val transformer = transformerBuilder
                 .addListener(object : Transformer.Listener {
@@ -161,27 +171,9 @@ internal class Media3VideoCompressor(private val context: Context) {
         val mediaItem = MediaItem.fromUri(input.toURI().toString())
         val videoEffects = mutableListOf<Effect>()
 
-        val outputHeight = profile.outputVideoHeight
-            ?: profile.targetHeight
-            ?: run {
-                val cap = profile.maxVideoLongEdge
-                if (cap != null && origW > 0 && origH > 0) {
-                    val longEdge = maxOf(origW, origH)
-                    if (longEdge > cap) {
-                        VideoDimensions.outputHeightForShortSide(origW, origH, cap)
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                }
-            }
-
-        if (origW > 0 && origH > 0 && outputHeight > 0 && outputHeight < origH) {
-            val presentation = Presentation.createForHeight(outputHeight)
-            if (!presentation.isNoOp(origW, origH)) {
-                videoEffects += presentation
-            }
+        val presentation = presentationEffect(profile, origW, origH)
+        if (presentation != null) {
+            videoEffects += presentation
         }
 
         val audioProcessors = if (!profile.removeAudio && profile.volumePercent != 100) {
@@ -197,6 +189,40 @@ internal class Media3VideoCompressor(private val context: Context) {
             builder.setFrameRate(fps)
         }
         return builder.build()
+    }
+
+    private fun presentationEffect(profile: CompressionProfile, origW: Int, origH: Int): Effect? {
+        if (origW <= 0 || origH <= 0) return null
+        val tw = profile.targetWidth
+        val th = profile.targetHeight
+        if (tw != null && th != null && tw > 0 && th > 0 && (tw < origW || th < origH)) {
+            return Presentation.createForWidthAndHeight(tw, th, Presentation.LAYOUT_SCALE_TO_FIT)
+        }
+        val outputHeight = profile.outputVideoHeight
+            ?: profile.targetHeight
+            ?: run {
+                val cap = profile.maxVideoLongEdge
+                if (cap != null) {
+                    VideoDimensions.outputHeightForShortSide(origW, origH, cap)
+                } else {
+                    0
+                }
+            }
+        if (outputHeight > 0 && outputHeight < origH) {
+            val size = VideoDimensions.presentationSize(origW, origH, outputHeight)
+            if (size != null) {
+                return Presentation.createForWidthAndHeight(
+                    size.first,
+                    size.second,
+                    Presentation.LAYOUT_SCALE_TO_FIT,
+                )
+            }
+            val presentation = Presentation.createForHeight(outputHeight)
+            if (!presentation.isNoOp(origW, origH)) {
+                return presentation
+            }
+        }
+        return null
     }
 
     private fun targetBitrate(input: File, factor: Double): Int {

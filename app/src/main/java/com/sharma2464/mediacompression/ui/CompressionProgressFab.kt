@@ -18,17 +18,21 @@ import com.sharma2464.mediacompression.compress.CompressionStatus
 import com.sharma2464.mediacompression.compress.batchOverallFraction
 
 @Composable
-fun CompressionProgressFab(onOpenProgressDialog: () -> Unit) {
+fun CompressionProgressFab(
+    onOpenProgressDialog: () -> Unit,
+    indeterminate: Boolean = false,
+) {
     val batch by CompressionStatus.batch.collectAsState()
-    val currentBatch = batch ?: return
+    val overallFraction = batch?.let { batchOverallFraction(it) } ?: 0f
 
     FloatingActionButton(onClick = onOpenProgressDialog) {
-        val overallFraction = remember(currentBatch) {
-            batchOverallFraction(currentBatch)
-        }
         Box(contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(progress = { overallFraction }, modifier = Modifier.size(40.dp))
-            Icon(Icons.Default.Refresh, contentDescription = "Compression in progress")
+            if (indeterminate) {
+                CircularProgressIndicator(modifier = Modifier.size(40.dp))
+            } else {
+                CircularProgressIndicator(progress = { overallFraction }, modifier = Modifier.size(40.dp))
+            }
+            Icon(Icons.Default.Refresh, contentDescription = "Open compression progress")
         }
     }
 }

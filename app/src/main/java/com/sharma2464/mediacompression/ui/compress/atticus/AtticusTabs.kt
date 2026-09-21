@@ -1,4 +1,6 @@
 // UI adapted from Josh Atticus Compressor (MIT): https://github.com/JoshAtticus/Compressor
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.sharma2464.mediacompression.ui.compress.atticus
 
 import android.annotation.SuppressLint
@@ -51,12 +53,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MimeTypes
+import com.sharma2464.mediacompression.compress.VideoCodecMime.labelForMime
+import com.sharma2464.mediacompression.compress.effectiveVideoMime
 import com.sharma2464.mediacompression.compress.CompressFlowActions
 import com.sharma2464.mediacompression.compress.CompressFlowUiState
 import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.PresetTier
+import com.sharma2464.mediacompression.compress.TargetSizeSliderStops
+import com.sharma2464.mediacompression.settings.AppSettings
 import com.sharma2464.mediacompression.settings.TargetSizePreset
-import kotlinx.coroutines.delay
+import com.sharma2464.mediacompression.settings.VideoEngine
+import androidx.compose.ui.platform.LocalContext
+import com.sharma2464.mediacompression.compress.AudioFormatChoice
 import java.util.Locale
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -85,51 +93,38 @@ fun AtticusPresetsTab(
             Triple(PresetTier.MEDIUM, "Medium", "Balanced size and quality"),
             Triple(PresetTier.LOW, "Low", "Smallest files"),
         )
-        presets.forEach { (tier, title, sub) ->
-            val selected = settings.presetTier == tier
-            val enabled = when (tier) {
-                PresetTier.MEDIUM -> ui.originalHeight >= 1080 || ui.originalHeight == 0
-                PresetTier.LOW -> ui.originalHeight >= 720 || ui.originalHeight == 0
-                else -> true
-            }
-            val selectionScale by animateFloatAsState(if (selected) 1.02f else 1f, animationSpec = ExpressiveSpatialSpring, label = "sel")
-            val interactionSource = remember { MutableInteractionSource() }
-            val isPressed by interactionSource.collectIsPressedAsState()
-            val pressScale by animateFloatAsState(if (isPressed) 0.96f else 1f, animationSpec = ExpressiveSpatialSpring, label = "press")
-            OutlinedCard(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    actions.applyPreset(tier)
-                },
-                enabled = enabled,
-                shape = RoundedCornerShape(24.dp),
-                interactionSource = interactionSource,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .graphicsLayer { scaleX = selectionScale * pressScale; scaleY = selectionScale * pressScale }
-                    .then(if (tier == PresetTier.MEDIUM) Modifier.testTag("compress_tab_presets") else Modifier),
-                colors = if (selected) {
-                    CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-                } else {
-                    CardDefaults.outlinedCardColors(
-                        containerColor = if (enabled) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerLow.copy(0.3f),
-                    )
-                },
-                border = if (selected) BorderStroke(0.dp, Color.Transparent) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (selected) {
-                        Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            presets.forEach { (tier, title, _) ->
+                val enabled = when (tier) {
+                    PresetTier.MEDIUM -> ui.originalHeight >= 1080 || ui.originalHeight == 0
+                    PresetTier.LOW -> ui.originalHeight >= 720 || ui.originalHeight == 0
+                    else -> true
                 }
+                SelectionChip(
+                    selected = settings.presetTier == tier,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        actions.applyPreset(tier)
+                    },
+                    label = title,
+                    enabled = enabled,
+                    modifier = if (tier == PresetTier.MEDIUM) Modifier.testTag("compress_tab_presets") else Modifier,
+                )
             }
         }
-        Spacer(Modifier.height(24.dp))
+        val selectedDescription = presets.first { it.first == settings.presetTier }.third
+        Text(
+            selectedDescription,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 16.dp),
+        )
         val originalMb = ui.originalSize / (1024f * 1024f)
         val sizePresets = targetSizePresets.filter { it.sizeMb < originalMb || originalMb <= 0f }
         if (showTargetSizeChips && sizePresets.isNotEmpty()) {
@@ -181,78 +176,34 @@ fun AtticusVideoOptionsTab(
             .padding(horizontal = 24.dp, vertical = 24.dp),
     ) {
         Text("Advanced options", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
-        var sliderValue by remember { mutableFloatStateOf(settings.targetSizeMb) }
-        var isUserInteracting by remember { mutableStateOf(false) }
-        LaunchedEffect(settings.targetSizeMb) {
-            if (!isUserInteracting) sliderValue = settings.targetSizeMb
-        }
-        LaunchedEffect(sliderValue) {
-            if (isUserInteracting) {
-                delay(150)
-                actions.setTargetSizePreview(sliderValue)
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Target size", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-            Text(
-                if (sliderValue >= 1024) String.format(Locale.US, "%.2f GB", sliderValue / 1024f)
-                else String.format(Locale.US, "%.1f MB", sliderValue),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
+        val context = LocalContext.current
+        val appSettings = remember(context) { AppSettings(context) }
+        val originalMb = if (ui.originalSize > 0) ui.originalSize / (1024f * 1024f) else 100f
+        val stops = remember(originalMb, ui.minimumSizeMb, settings.targetSizeMb, appSettings.targetSizePresets) {
+            TargetSizeSliderStops.build(
+                originalMb = originalMb,
+                minimumMb = ui.minimumSizeMb,
+                currentMb = settings.targetSizeMb,
+                extraPresets = appSettings.targetSizePresets,
             )
         }
-        val originalMb = if (ui.originalSize > 0) ui.originalSize / (1024f * 1024f) else 100f
-        val minSize = 0.5f
-        val maxSize = maxOf(originalMb, sliderValue, settings.targetSizeMb, 1f)
-        val sliderFraction = if (maxSize > minSize && sliderValue > 0f) {
-            (kotlin.math.ln(sliderValue.coerceAtLeast(minSize) / minSize) / kotlin.math.ln(maxSize / minSize)).toFloat().coerceIn(0f, 1f)
-        } else {
-            0.5f
-        }
-        Slider(
-            value = sliderFraction,
-            onValueChange = { fraction ->
-                isUserInteracting = true
-                val calculated = minSize * kotlin.math.exp(fraction * kotlin.math.ln(maxSize / minSize)).toFloat()
-                val rounded = when {
-                    fraction >= 0.995f -> maxSize
-                    calculated < 2.5f -> kotlin.math.round(calculated * 10f) / 10f
-                    calculated < 10f -> kotlin.math.round(calculated * 2f) / 2f
-                    calculated < 50f -> kotlin.math.round(calculated)
-                    calculated < 200f -> kotlin.math.round(calculated / 5f) * 5f
-                    else -> kotlin.math.round(calculated / 10f) * 10f
-                }.coerceIn(minSize, maxSize)
-                if (sliderValue != rounded) {
-                    sliderValue = rounded
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-            },
-            onValueChangeFinished = {
-                isUserInteracting = false
-                actions.setTargetSize(sliderValue)
-            },
-            valueRange = 0f..1f,
+        TargetSizeSlider(
+            stopsMb = stops,
+            selectedMb = settings.targetSizeMb,
+            onPreview = { actions.setTargetSizePreview(it) },
+            onCommit = { actions.setTargetSize(it) },
+            modifier = Modifier.padding(bottom = 8.dp),
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Less space", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-            Text("Balanced", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-            Text("High quality", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-        }
         Spacer(Modifier.height(16.dp))
         Text("Encoding", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val selectedMime = settings.effectiveVideoMime()
             ui.supportedCodecs.forEach { codec ->
-                val label = when (codec) {
-                    MimeTypes.VIDEO_H265 -> "H.265 (efficient)"
-                    MimeTypes.VIDEO_H264 -> "H.264 (compatible)"
-                    else -> codec.substringAfter("/").uppercase()
-                }
-                val selected = when (codec) {
-                    MimeTypes.VIDEO_H264 -> settings.videoCodec == com.sharma2464.mediacompression.compress.VideoCodec.H264
-                    else -> settings.videoCodec == com.sharma2464.mediacompression.compress.VideoCodec.H265
-                }
-                SelectionChip(selected = selected, onClick = { actions.setVideoCodec(codec) }, label = label)
+                SelectionChip(
+                    selected = codec == selectedMime,
+                    onClick = { actions.setVideoCodec(codec) },
+                    label = labelForMime(codec),
+                )
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -292,14 +243,18 @@ fun AtticusVideoOptionsTab(
         }
         Spacer(Modifier.height(16.dp))
         Text("Framerate", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SelectionChip(selected = settings.frameRate == com.sharma2464.mediacompression.compress.FrameRateChoice.ORIGINAL, onClick = { actions.setFps(0) }, label = "Original • ${ui.originalFps.toInt()}")
             SelectionChip(selected = settings.frameRate == com.sharma2464.mediacompression.compress.FrameRateChoice.FPS_60, onClick = { actions.setFps(60) }, label = "60 fps", enabled = ui.originalFps >= 50f)
             SelectionChip(selected = settings.frameRate == com.sharma2464.mediacompression.compress.FrameRateChoice.FPS_30, onClick = { actions.setFps(30) }, label = "30 fps")
+            SelectionChip(selected = settings.frameRate == com.sharma2464.mediacompression.compress.FrameRateChoice.FPS_24, onClick = { actions.setFps(24) }, label = "24 fps", enabled = ui.originalFps >= 24f)
+            SelectionChip(selected = settings.frameRate == com.sharma2464.mediacompression.compress.FrameRateChoice.FPS_15, onClick = { actions.setFps(15) }, label = "15 fps", enabled = ui.originalFps >= 15f)
+            SelectionChip(selected = settings.frameRate == com.sharma2464.mediacompression.compress.FrameRateChoice.FPS_10, onClick = { actions.setFps(10) }, label = "10 fps", enabled = ui.originalFps >= 10f)
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AtticusAudioOptionsTab(
     ui: CompressFlowUiState,
@@ -331,6 +286,40 @@ fun AtticusAudioOptionsTab(
         }
         AnimatedVisibility(visible = !settings.removeAudio) {
             Column(Modifier.padding(top = 16.dp)) {
+                val context = LocalContext.current
+                val appSettings = remember(context) { AppSettings(context) }
+                val lcEngine = appSettings.videoEngine == VideoEngine.LIGHT_COMPRESSOR
+                Text("Audio encoding", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                if (lcEngine) {
+                    Text(
+                        "Format is controlled by LightCompressor when that engine is selected.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                } else {
+                    FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SelectionChip(
+                            selected = settings.audioFormat == AudioFormatChoice.AAC,
+                            onClick = { actions.setAudioFormat(AudioFormatChoice.AAC) },
+                            label = "AAC",
+                            enabled = !lcEngine,
+                        )
+                        SelectionChip(
+                            selected = settings.audioFormat == AudioFormatChoice.OPUS,
+                            onClick = { actions.setAudioFormat(AudioFormatChoice.OPUS) },
+                            label = "Opus",
+                            enabled = !lcEngine,
+                        )
+                        SelectionChip(
+                            selected = settings.audioFormat == AudioFormatChoice.ORIGINAL_PASSTHROUGH,
+                            onClick = { actions.setAudioFormat(AudioFormatChoice.ORIGINAL_PASSTHROUGH) },
+                            label = "Original",
+                            enabled = !lcEngine && ui.originalAudioBitrate > 0,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
                 Text("Audio bitrate", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val effective = settings.audioBitrateKbps?.let { it * 1000 } ?: ui.originalAudioBitrate

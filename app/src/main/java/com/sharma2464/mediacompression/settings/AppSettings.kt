@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.CompressionStrength
 import com.sharma2464.mediacompression.data.FileKind
+import com.sharma2464.mediacompression.settings.FilenameSegment
 
 enum class CompressionMode { LOSSLESS_ONLY, ADAPTIVE }
 
@@ -126,6 +127,18 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_ALL_CODECS_ENABLED, false)
         set(value) = prefs.edit { putBoolean(KEY_ALL_CODECS_ENABLED, value) }
 
+    var videoEngine: VideoEngine
+        get() = prefs.getString(KEY_VIDEO_ENGINE, VideoEngine.MEDIA3.name)
+            ?.let { runCatching { VideoEngine.valueOf(it) }.getOrNull() }
+            ?: VideoEngine.MEDIA3
+        set(value) = prefs.edit { putString(KEY_VIDEO_ENGINE, value.name) }
+
+    var filenameSegments: List<FilenameSegment>
+        get() = FilenameSegment.deserialize(prefs.getString(KEY_FILENAME_SEGMENTS, null))
+        set(value) = prefs.edit {
+            putString(KEY_FILENAME_SEGMENTS, FilenameSegment.serialize(value))
+        }
+
     fun qualityPresetFor(tier: com.sharma2464.mediacompression.compress.PresetTier): QualityPresetConfig =
         when (tier) {
             com.sharma2464.mediacompression.compress.PresetTier.HIGH -> highQualityPreset
@@ -141,6 +154,33 @@ class AppSettings(context: Context) {
 
     fun resetTargetSizePresets() {
         targetSizePresets = TargetSizePreset.defaults
+    }
+
+    fun resetFilenameSegments() {
+        filenameSegments = FilenameSegment.defaultSegments
+    }
+
+    fun addTargetSizePreset(label: String, sizeMb: Float) {
+        val id = "custom_${System.currentTimeMillis()}"
+        targetSizePresets = targetSizePresets + TargetSizePreset(id, sizeMb, label.trim())
+    }
+
+    fun updateTargetSizePreset(id: String, label: String, sizeMb: Float) {
+        targetSizePresets = targetSizePresets.map {
+            if (it.id == id) it.copy(label = label.trim(), sizeMb = sizeMb) else it
+        }
+    }
+
+    fun deleteTargetSizePreset(id: String) {
+        targetSizePresets = targetSizePresets.filterNot { it.id == id }
+    }
+
+    fun resetDefaultVideoConfig() {
+        defaultVideoConfig = DefaultVideoConfig()
+    }
+
+    fun resetDefaultAudioConfig() {
+        defaultAudioConfig = DefaultAudioConfig()
     }
 
     fun enableAllCodecsFeature() {
@@ -172,5 +212,7 @@ class AppSettings(context: Context) {
         private const val KEY_DEFAULT_AUDIO = "default_audio_config"
         private const val KEY_ALL_CODECS_UNLOCKED = "all_codecs_unlocked"
         private const val KEY_ALL_CODECS_ENABLED = "all_codecs_enabled"
+        private const val KEY_FILENAME_SEGMENTS = "filename_segments_v2"
+        private const val KEY_VIDEO_ENGINE = "video_engine"
     }
 }

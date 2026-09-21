@@ -111,13 +111,14 @@ fun AtticusConfigScreen(
                 }
                 VerticalDivider(Modifier.fillMaxHeight())
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    AtticusConfigBody(ui, settings, actions, hasVideo, videoFile, pagerState, isLarger, haptics, onStart)
+                    AtticusConfigBody(ui, settings, actions, hasVideo, videoFile, pagerState, isLarger, haptics, onStart, appSettings)
                 }
             }
         } else {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
                 AtticusInfoCard(ui, Modifier.padding(horizontal = if (largeFont) 16.dp else 24.dp, vertical = 12.dp))
                 if (hasVideo) {
+                    VideoEngineSelector(appSettings)
                     AtticusTabBar(tabs, pagerState, scope, haptics, largeFont)
                 }
                 HorizontalPager(state = pagerState, modifier = Modifier.weight(1f), userScrollEnabled = hasVideo) { page ->
@@ -157,9 +158,13 @@ private fun AtticusConfigBody(
     isLarger: Boolean,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
     onStart: () -> Unit,
+    appSettings: AppSettings,
 ) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         AtticusInfoCard(ui, Modifier.padding(horizontal = 24.dp, vertical = 24.dp))
+        if (hasVideo) {
+            VideoEngineSelector(appSettings, Modifier.padding(horizontal = 4.dp))
+        }
         Box(Modifier.weight(1f)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize(), userScrollEnabled = false) { page ->
                 when (page) {

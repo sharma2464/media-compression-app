@@ -9,9 +9,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
+import kotlin.math.min
 
 object CompressionPreviewFrames {
     private const val MAX_PREVIEW_EDGE = 720
+    private const val MIN_ENCODED_BYTES = 256L
 
     fun positionLabel(percent: Int, durationMs: Long?): String? {
         if (durationMs == null || durationMs <= 0) return null
@@ -19,6 +21,30 @@ object CompressionPreviewFrames {
         val totalSec = durationMs / 1000
         val posSec = positionMs / 1000
         return "Frame ~${formatTime(posSec)} / ${formatTime(totalSec)}"
+    }
+
+    fun resolveCompressedPreviewPath(finishedOutputPath: String?, encodeOutputPath: String?): String? =
+        listOfNotNull(finishedOutputPath, encodeOutputPath)
+            .map(::File)
+            .filter { it.exists() && it.length() >= MIN_ENCODED_BYTES }
+            .maxByOrNull { it.length() }
+            ?.absolutePath
+
+    /** Maps source timeline position to a seek time inside a possibly partial encoded file. */
+    fun encodedSeekTimeUs(
+        sourceDurationMs: Long,
+        timelinePercent: Int,
+        encodeProgressPercent: Int,
+        encodedDurationMs: Long?,
+    ): Long {
+        val timelineMs = timelinePercent.coerceIn(0, 100) / 100f * sourceDurationMs
+        val encodedCapMs = when {
+            encodedDurationMs != null && encodedDurationMs > 0 ->
+                min(encodedDurationMs.toFloat(), sourceDurationMs * encodeProgressPercent / 100f)
+            else -> sourceDurationMs * encodeProgressPercent / 100f
+        }.coerceAtLeast(1f)
+        val seekMs = min(timelineMs, encodedCapMs * 0.92f).coerceAtLeast(0f)
+        return (seekMs * 1000).toLong()
     }
 
     suspend fun loadVideoFrame(
@@ -45,27 +71,55 @@ object CompressionPreviewFrames {
         }
     }
 
-    suspend fun loadVideoFrameFromPath(
+    suspend fun loadEncodedCompareFrame(
         filePath: String?,
-        percent: Int,
-        durationMs: Long?,
+        sourceDurationMs: Long?,
+        timelinePercent: Int,
+        encodeProgressPercent: Int,
     ): Bitmap? = withContext(Dispatchers.IO) {
-        if (filePath.isNullOrBlank()) return@withContext null
+        if (filePath.isNullOrBlank() || sourceDurationMs == null || sourceDurationMs <= 0) {
+            return@withContext null
+        }
         val file = File(filePath)
-        if (!file.exists() || file.length() < 1024) return@withContext null
-        val duration = durationMs ?: return@withContext null
-        if (duration <= 0) return@withContext null
-        val timeUs = (percent.coerceIn(0, 100) / 100f * duration * 1000).toLong()
+        if (!file.exists() || file.length() < MIN_ENCODED_BYTES) return@withContext null
+
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)
-            downscale(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST))
+            val encodedDurationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+            val primaryUs = encodedSeekTimeUs(
+                sourceDurationMs,
+                timelinePercent,
+                encodeProgressPercent,
+                encodedDurationMs,
+            )
+            val fallbacksUs = listOf(
+                primaryUs,
+                (primaryUs * 0.5f).toLong(),
+                0L,
+            ).distinct()
+            for (timeUs in fallbacksUs) {
+                val frame = retriever.getFrameAtTime(
+                    timeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                ) ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                val scaled = downscale(frame)
+                if (scaled != null) return@withContext scaled
+            }
+            null
         } catch (_: Exception) {
             null
         } finally {
             retriever.release()
         }
     }
+
+    suspend fun loadVideoFrameFromPath(
+        filePath: String?,
+        percent: Int,
+        durationMs: Long?,
+    ): Bitmap? = loadEncodedCompareFrame(filePath, durationMs, percent, encodeProgressPercent = 100)
 
     fun uriForPreview(uriString: String?): String? {
         if (uriString.isNullOrBlank()) return null

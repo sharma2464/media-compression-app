@@ -136,6 +136,9 @@ class CompressionPipeline(private val context: Context) {
             onProgress(CompressionProgressPhases.compressPercent(enc))
         }
         val outputFile = applyFilenameBuilder(entry, localCopy, profile, result, workDir)
+        if (fileIndex >= 0) {
+            CompressionStatus.setEncodeOutputPath(fileIndex, outputFile.absolutePath)
+        }
         val newName = outputFile.name
         val saveTotal = outputFile.length().coerceAtLeast(1L)
 
@@ -212,6 +215,9 @@ class CompressionPipeline(private val context: Context) {
             onProgress(CompressionProgressPhases.compressPercent(enc))
         }
         val outputFile = applyFilenameBuilder(entry, localCopy, profile, result, workDir)
+        if (fileIndex >= 0) {
+            CompressionStatus.setEncodeOutputPath(fileIndex, outputFile.absolutePath)
+        }
         val newName = outputFile.name
         val saveTotal = outputFile.length().coerceAtLeast(1L)
 

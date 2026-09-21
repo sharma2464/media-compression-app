@@ -48,6 +48,12 @@ import com.sharma2464.mediacompression.compress.CompressionPreviewMilestones
 import com.sharma2464.mediacompression.data.FileKind
 import kotlin.math.roundToInt
 
+private fun clampPanOffset(offset: Float, containerPx: Float, scale: Float): Float {
+    if (scale <= 1f) return 0f
+    val max = containerPx * (scale - 1f) / 2f
+    return offset.coerceIn(-max, max)
+}
+
 @Composable
 fun CompressionComparePreview(
     sourceUri: String?,
@@ -109,11 +115,6 @@ fun CompressionComparePreview(
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 4f)
-        offsetX += panChange.x
-        offsetY += panChange.y
-    }
 
     Column(modifier.fillMaxWidth()) {
         Surface(
@@ -124,25 +125,58 @@ fun CompressionComparePreview(
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             if (isPhoto && sourceUri != null) {
-                ZoomableCompareBox {
-                    PhotoCompareContent(sourceUri, compressedPath)
+                BoxWithConstraints(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp))) {
+                    val w = constraints.maxWidth.toFloat()
+                    val h = constraints.maxHeight.toFloat()
+                    ZoomableImageLayer(
+                        containerWidthPx = w,
+                        containerHeightPx = h,
+                        scale = scale,
+                        offsetX = offsetX,
+                        offsetY = offsetY,
+                        onTransform = { newScale, newOx, newOy ->
+                            scale = newScale
+                            offsetX = newOx
+                            offsetY = newOy
+                        },
+                    ) {
+                        PhotoCompareContent(sourceUri, compressedPath)
+                    }
                 }
             } else {
-                BoxWithConstraints(Modifier.fillMaxSize()) {
+                BoxWithConstraints(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp)),
+                ) {
                     val widthPx = constraints.maxWidth.toFloat()
+                    val heightPx = constraints.maxHeight.toFloat()
                     val dividerX = (wipeFraction * widthPx).roundToInt()
                     val dividerDp = with(LocalDensity.current) { dividerX.toDp() }
                     val fullWidth = maxWidth
 
+                    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+                        val newScale = (scale * zoomChange).coerceIn(1f, 4f)
+                        scale = newScale
+                        if (newScale <= 1f) {
+                            offsetX = 0f
+                            offsetY = 0f
+                        } else {
+                            offsetX = clampPanOffset(offsetX + panChange.x, widthPx, newScale)
+                            offsetY = clampPanOffset(offsetY + panChange.y, heightPx, newScale)
+                        }
+                    }
+
+                    val imageTransform = Modifier.graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offsetX
+                        translationY = offsetY
+                    }
+
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                                translationX = offsetX
-                                translationY = offsetY
-                            }
                             .transformable(transformState)
                             .pointerInput(canStepBack, canStepForward) {
                                 detectTapGestures { offset ->
@@ -164,41 +198,43 @@ fun CompressionComparePreview(
                     ) {
                         val after = compressedBitmap
                         val before = originalBitmap
-                        if (after != null) {
-                            Image(
-                                bitmap = after.asImageBitmap(),
-                                contentDescription = "Compressed",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else if (before != null) {
-                            Image(
-                                bitmap = before.asImageBitmap(),
-                                contentDescription = "Original",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("Loading preview…", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                        if (before != null && after != null) {
-                            Box(
-                                Modifier
-                                    .fillMaxHeight()
-                                    .width(dividerDp)
-                                    .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
-                            ) {
+                        Box(Modifier.fillMaxSize().then(imageTransform)) {
+                            if (after != null) {
+                                Image(
+                                    bitmap = after.asImageBitmap(),
+                                    contentDescription = "Compressed",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else if (before != null) {
                                 Image(
                                     bitmap = before.asImageBitmap(),
                                     contentDescription = "Original",
-                                    modifier = Modifier
-                                        .width(fullWidth)
-                                        .fillMaxHeight()
-                                        .align(Alignment.CenterStart),
+                                    modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
                                 )
+                            } else {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text("Loading preview…", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            if (before != null && after != null) {
+                                Box(
+                                    Modifier
+                                        .fillMaxHeight()
+                                        .width(dividerDp)
+                                        .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
+                                ) {
+                                    Image(
+                                        bitmap = before.asImageBitmap(),
+                                        contentDescription = "Original",
+                                        modifier = Modifier
+                                            .width(fullWidth)
+                                            .fillMaxHeight()
+                                            .align(Alignment.CenterStart),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                }
                             }
                         }
                         if (before != null && after == null) {
@@ -210,30 +246,31 @@ fun CompressionComparePreview(
                                 )
                             }
                         }
+                    }
+
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .width(24.dp)
+                            .offset { IntOffset(dividerX - 12, 0) }
+                            .pointerInput(widthPx) {
+                                detectHorizontalDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    wipeFraction = (wipeFraction + dragAmount / widthPx)
+                                        .coerceIn(0.05f, 0.95f)
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Box(
                             Modifier
                                 .fillMaxHeight()
-                                .width(24.dp)
-                                .offset { IntOffset(dividerX - 12, 0) }
-                                .pointerInput(widthPx) {
-                                    detectHorizontalDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        wipeFraction = (wipeFraction + dragAmount / widthPx)
-                                            .coerceIn(0.05f, 0.95f)
-                                    }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Box(
-                                Modifier
-                                    .fillMaxHeight()
-                                    .width(3.dp)
-                                    .background(MaterialTheme.colorScheme.primary),
-                            )
-                        }
-                        LabelChip("Original", Modifier.align(Alignment.TopStart))
-                        LabelChip("Compressed", Modifier.align(Alignment.TopEnd))
+                                .width(3.dp)
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
                     }
+                    LabelChip("Original", Modifier.align(Alignment.TopStart))
+                    LabelChip("Compressed", Modifier.align(Alignment.TopEnd))
                 }
             }
         }
@@ -243,6 +280,43 @@ fun CompressionComparePreview(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp, start = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun ZoomableImageLayer(
+    containerWidthPx: Float,
+    containerHeightPx: Float,
+    scale: Float,
+    offsetX: Float,
+    offsetY: Float,
+    onTransform: (scale: Float, offsetX: Float, offsetY: Float) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val newScale = (scale * zoomChange).coerceIn(1f, 4f)
+        if (newScale <= 1f) {
+            onTransform(1f, 0f, 0f)
+        } else {
+            onTransform(
+                newScale,
+                clampPanOffset(offsetX + panChange.x, containerWidthPx, newScale),
+                clampPanOffset(offsetY + panChange.y, containerHeightPx, newScale),
+            )
+        }
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offsetX
+                translationY = offsetY
+            }
+            .transformable(transformState),
+    ) {
+        content()
     }
 }
 
@@ -260,31 +334,6 @@ private fun LabelChip(text: String, modifier: Modifier = Modifier) {
             )
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
-}
-
-@Composable
-private fun ZoomableCompareBox(content: @Composable () -> Unit) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 4f)
-        offsetX += panChange.x
-        offsetY += panChange.y
-    }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                translationX = offsetX
-                translationY = offsetY
-            }
-            .transformable(transformState),
-    ) {
-        content()
-    }
 }
 
 @Composable

@@ -40,7 +40,6 @@ import com.sharma2464.mediacompression.data.FileKind
 @Composable
 fun AtticusProgressScreen(
     title: String,
-    subtitle: String,
     progress: Float,
     modifier: Modifier = Modifier,
     fileUri: String? = null,
@@ -75,12 +74,6 @@ fun AtticusProgressScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp),
-        )
         Spacer(Modifier.height(16.dp))
         CompressionComparePreview(
             sourceUri = sourceUri ?: fileUri,
@@ -143,7 +136,9 @@ fun AtticusProgressScreen(
                             line,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 2.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
                         )
                     }
                 }

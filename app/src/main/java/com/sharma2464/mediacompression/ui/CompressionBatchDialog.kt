@@ -269,9 +269,39 @@ private fun ProgressStage(
     var showCancelConfirmation by remember { mutableStateOf(false) }
     var cancelInProgress by remember { mutableStateOf(false) }
     var cancelResultMessage by remember { mutableStateOf<String?>(null) }
+    var compressionWorkActive by remember { mutableStateOf(false) }
+    LaunchedEffect(context) {
+        WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWorkFlow(CompressionWorker.WORK_NAME)
+            .collect { infos ->
+                compressionWorkActive = infos.any {
+                    it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                }
+            }
+    }
     LaunchedEffect(batch?.currentIndex) {
-        showCancelConfirmation = false
-        cancelInProgress = false
+        if (batch != null) {
+            showCancelConfirmation = false
+            if (cancelResultMessage == null) {
+                cancelInProgress = false
+            }
+        }
+    }
+    var seenActiveCompression by remember { mutableStateOf(false) }
+    LaunchedEffect(batch, compressionWorkActive) {
+        if (batch != null || compressionWorkActive) {
+            seenActiveCompression = true
+        }
+    }
+    LaunchedEffect(batch, compressionWorkActive, seenActiveCompression, cancelResultMessage) {
+        if (
+            seenActiveCompression &&
+            batch == null &&
+            !compressionWorkActive &&
+            cancelResultMessage == null
+        ) {
+            onCompressionStopped()
+        }
     }
 
     Scaffold(
@@ -301,17 +331,18 @@ private fun ProgressStage(
         val currentName = batch.files.getOrNull(batch.currentIndex)?.fileName
             ?: batch.files.lastOrNull { it.state != FileCompressionState.QUEUED }?.fileName
             ?: "Preparing…"
-        val rateText = if (batch.rateBytesPerSec > 0) {
-            "${Formatter.formatShortFileSize(context, batch.rateBytesPerSec)}/s"
-        } else {
-            "—"
-        }
         val fraction = batchOverallFraction(batch)
         val currentPct = batch.files.getOrNull(batch.currentIndex)?.percent ?: 0
-        val phaseHint = when {
-            currentPct >= 85 && currentPct < 100 -> " · Finalizing encode…"
-            fraction >= 0.9f && fraction < 0.995f -> " · Saving…"
-            else -> ""
+        val phaseLabel = when {
+            currentPct >= 85 && currentPct < 100 -> "Finalizing encode"
+            fraction >= 0.9f && fraction < 0.995f -> "Saving"
+            else -> null
+        }
+        val speedLabel = if (batch.rateBytesPerSec > 0) {
+            val mbPerSec = batch.rateBytesPerSec / (1024.0 * 1024.0)
+            String.format(java.util.Locale.US, "%.1f MB/s", mbPerSec)
+        } else {
+            "—"
         }
         val videoMeta = remember(batch.currentFileUri, batch.currentFileKind) {
             if (batch.currentFileKind == com.sharma2464.mediacompression.data.FileKind.VIDEO) {
@@ -322,8 +353,24 @@ private fun ProgressStage(
         }
         val currentFile = batch.files.getOrNull(batch.currentIndex)
             ?: batch.files.lastOrNull { it.state == FileCompressionState.IN_PROGRESS }
-        val settingsLines = remember(batch.jobSettings, batch.modeLabel, videoMeta, batch.videoEngine) {
-            CompressJobSummary.lines(
+        val settingsLines = remember(
+            batch.jobSettings,
+            batch.modeLabel,
+            videoMeta,
+            batch.videoEngine,
+            currentName,
+            currentPct,
+            fraction,
+            speedLabel,
+            phaseLabel,
+        ) {
+            CompressJobSummary.progressLines(
+                currentFileName = currentName,
+                filePercent = currentPct,
+                batchPercent = (fraction * 100).toInt(),
+                speedLabel = speedLabel,
+                phaseLabel = phaseLabel,
+            ) + CompressJobSummary.lines(
                 batch.jobSettings,
                 batch.modeLabel,
                 videoMeta,
@@ -333,7 +380,6 @@ private fun ProgressStage(
         Column(Modifier.padding(padding)) {
             AtticusProgressScreen(
                 title = "Compressing files",
-                subtitle = "${batch.modeLabel} · $currentName · $rateText$phaseHint",
                 progress = fraction,
                 fileUri = batch.currentFileUri,
                 sourceUri = currentFile?.sourceUri ?: batch.currentFileUri,
@@ -387,10 +433,10 @@ private fun ProgressStage(
                 },
                 onDismissCancelResult = {
                     cancelResultMessage = null
+                    CompressionStatus.clear()
                     if (finished != null) {
                         onShowComplete()
                     } else {
-                        CompressionStatus.clear()
                         onCompressionStopped()
                     }
                 },

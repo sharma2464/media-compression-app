@@ -105,7 +105,8 @@ class CompressionWorker(context: Context, params: WorkerParameters) : CoroutineW
                         modeLabel = modeLabel,
                     ),
                 )
-            } else {
+            } else if (!CompressionStatus.cancelRequested.value) {
+                // Keep batch state when the user cancelled so the progress UI can show the result.
                 CompressionStatus.clear()
             }
         }

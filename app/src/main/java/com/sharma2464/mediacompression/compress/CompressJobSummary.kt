@@ -34,6 +34,22 @@ object CompressJobSummary {
         return out
     }
 
+    fun progressLines(
+        currentFileName: String,
+        filePercent: Int,
+        batchPercent: Int,
+        speedLabel: String,
+        phaseLabel: String?,
+    ): List<String> = buildList {
+        add("Current file: $currentFileName")
+        add("This file: $filePercent%")
+        add("Batch overall: $batchPercent%")
+        add("Speed: $speedLabel")
+        if (!phaseLabel.isNullOrBlank()) {
+            add("Phase: $phaseLabel")
+        }
+    }
+
     private fun formatMb(mb: Float): String =
         String.format(Locale.US, "%.1f MB", mb.coerceAtLeast(0.1f))
 

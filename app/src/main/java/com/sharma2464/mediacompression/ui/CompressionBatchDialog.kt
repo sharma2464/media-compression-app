@@ -387,6 +387,8 @@ private fun ProgressStage(
                 durationMs = batch.currentDurationMs,
                 encodeOutputPath = currentFile?.encodeOutputPath,
                 finishedOutputPath = currentFile?.finishedOutputPath,
+                jobSettings = batch.jobSettings,
+                videoMeta = videoMeta,
                 settingsLines = settingsLines,
                 currentPercent = currentPct,
                 showCancelConfirmation = showCancelConfirmation,

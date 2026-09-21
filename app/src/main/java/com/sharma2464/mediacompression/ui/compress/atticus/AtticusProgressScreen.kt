@@ -34,7 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.CompressionPreviewFrames
+import com.sharma2464.mediacompression.compress.VideoMetadata
 import com.sharma2464.mediacompression.data.FileKind
 
 @Composable
@@ -48,6 +50,8 @@ fun AtticusProgressScreen(
     durationMs: Long? = null,
     encodeOutputPath: String? = null,
     finishedOutputPath: String? = null,
+    jobSettings: CompressJobSettings? = null,
+    videoMeta: VideoMetadata? = null,
     settingsLines: List<String> = emptyList(),
     currentPercent: Int = 0,
     showCancelConfirmation: Boolean = false,
@@ -82,6 +86,8 @@ fun AtticusProgressScreen(
             durationMs = durationMs,
             encodeOutputPath = encodeOutputPath,
             finishedOutputPath = finishedOutputPath,
+            jobSettings = jobSettings,
+            videoMeta = videoMeta,
         )
         if (frameLabel != null) {
             Text(

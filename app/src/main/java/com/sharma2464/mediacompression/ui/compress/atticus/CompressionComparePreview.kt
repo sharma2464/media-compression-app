@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -43,8 +44,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.sharma2464.mediacompression.compress.CompressJobSettings
 import com.sharma2464.mediacompression.compress.CompressionPreviewFrames
 import com.sharma2464.mediacompression.compress.CompressionPreviewMilestones
+import com.sharma2464.mediacompression.compress.CompressionPreviewSynthetic
+import com.sharma2464.mediacompression.compress.VideoMetadata
 import com.sharma2464.mediacompression.data.FileKind
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -64,6 +68,8 @@ fun CompressionComparePreview(
     durationMs: Long?,
     encodeOutputPath: String?,
     finishedOutputPath: String?,
+    jobSettings: CompressJobSettings? = null,
+    videoMeta: VideoMetadata? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -90,16 +96,29 @@ fun CompressionComparePreview(
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var compressedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var lastGoodCompressed by remember { mutableStateOf<Bitmap?>(null) }
+    var compressedIsSynthetic by remember { mutableStateOf(false) }
 
     val compressedPath = CompressionPreviewFrames.resolveCompressedPreviewPath(
         finishedOutputPath,
         encodeOutputPath,
     )
 
-    LaunchedEffect(sourceUri, fileKind, displayPercent, durationMs, compressedPath, livePercent) {
+    LaunchedEffect(
+        sourceUri,
+        fileKind,
+        displayPercent,
+        durationMs,
+        compressedPath,
+        livePercent,
+        jobSettings,
+        videoMeta,
+        encodeOutputPath,
+        finishedOutputPath,
+    ) {
         if (isPhoto) {
             originalBitmap = null
             compressedBitmap = null
+            compressedIsSynthetic = false
             return@LaunchedEffect
         }
         if (sourceUri == null) return@LaunchedEffect
@@ -108,12 +127,13 @@ fun CompressionComparePreview(
                 finishedOutputPath,
                 encodeOutputPath,
             )
-            originalBitmap = CompressionPreviewFrames.loadVideoFrame(
+            val original = CompressionPreviewFrames.loadVideoFrame(
                 context,
                 sourceUri,
                 displayPercent,
                 durationMs,
             )
+            originalBitmap = original
             val encoded = path?.let {
                 CompressionPreviewFrames.loadEncodedCompareFrame(
                     it,
@@ -122,15 +142,30 @@ fun CompressionComparePreview(
                     livePercent.coerceIn(0, 100),
                 )
             }
-            if (encoded != null) {
-                compressedBitmap = encoded
-                lastGoodCompressed = encoded
-            } else if (livePercent >= 100) {
-                compressedBitmap = lastGoodCompressed
-            } else {
-                compressedBitmap = null
+            when {
+                encoded != null -> {
+                    compressedBitmap = encoded
+                    lastGoodCompressed = encoded
+                    compressedIsSynthetic = false
+                }
+                original != null && jobSettings != null && videoMeta != null -> {
+                    compressedBitmap = CompressionPreviewSynthetic.fromOriginal(
+                        original,
+                        videoMeta,
+                        jobSettings,
+                    )
+                    compressedIsSynthetic = true
+                }
+                livePercent >= 100 -> {
+                    compressedBitmap = lastGoodCompressed
+                    compressedIsSynthetic = false
+                }
+                else -> {
+                    compressedBitmap = null
+                    compressedIsSynthetic = false
+                }
             }
-            if (livePercent >= 100 && encoded != null) break
+            if (encoded != null && livePercent >= 100) break
             delay(400)
         }
     }
@@ -233,19 +268,14 @@ fun CompressionComparePreview(
                                     )
                                 }
                                 before != null -> {
-                                    Box(
-                                        Modifier
+                                    Image(
+                                        bitmap = before.asImageBitmap(),
+                                        contentDescription = "Original (waiting for encoded frame)",
+                                        modifier = Modifier
                                             .fillMaxSize()
-                                            .background(MaterialTheme.colorScheme.surfaceDim),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            "Compressed preview appears as encoding progresses",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(16.dp),
-                                        )
-                                    }
+                                            .alpha(0.35f),
+                                        contentScale = ContentScale.Crop,
+                                    )
                                 }
                                 else -> {
                                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -296,7 +326,10 @@ fun CompressionComparePreview(
                         )
                     }
                     LabelChip("Original", Modifier.align(Alignment.TopStart))
-                    LabelChip("Compressed", Modifier.align(Alignment.TopEnd))
+                    LabelChip(
+                        if (compressedIsSynthetic) "Compressed (est.)" else "Compressed",
+                        Modifier.align(Alignment.TopEnd),
+                    )
                 }
             }
         }

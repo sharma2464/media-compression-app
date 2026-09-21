@@ -34,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -42,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -51,6 +51,7 @@ import com.sharma2464.mediacompression.compress.CompressionPreviewMilestones
 import com.sharma2464.mediacompression.compress.CompressionPreviewSynthetic
 import com.sharma2464.mediacompression.compress.VideoMetadata
 import com.sharma2464.mediacompression.data.FileKind
+import com.sharma2464.mediacompression.debug.DebugSessionLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToInt
@@ -84,19 +85,32 @@ fun CompressionComparePreview(
             lastCapturedPercent = livePercent
             val list = milestones.value
             if (list.isEmpty() || list.last() != livePercent) {
+                val atLiveEdge = frameIndex >= list.lastIndex
                 milestones.value = (list + livePercent).distinct().sorted()
-                frameIndex = milestones.value.lastIndex
+                if (atLiveEdge || list.isEmpty()) {
+                    frameIndex = milestones.value.lastIndex
+                }
             }
         }
     }
 
-    val displayPercent = milestones.value.getOrElse(frameIndex) { livePercent }
+    val atLiveEdge = frameIndex >= milestones.value.lastIndex
+    val displayPercent = if (atLiveEdge || milestones.value.isEmpty()) {
+        livePercent
+    } else {
+        milestones.value[frameIndex]
+    }
+    val syntheticStepPercent = (displayPercent / CompressionPreviewMilestones.PERCENT_STEP) *
+        CompressionPreviewMilestones.PERCENT_STEP
+    val previewFramePercent = if (atLiveEdge) syntheticStepPercent else displayPercent
+    val liveEncodeBucket = livePercent / CompressionPreviewMilestones.PERCENT_STEP
+    val livePercentRef = remember { mutableIntStateOf(livePercent) }
+    livePercentRef.intValue = livePercent
     val canStepBack = frameIndex > 0
     val canStepForward = frameIndex < milestones.value.lastIndex
 
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var compressedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var lastGoodCompressed by remember { mutableStateOf<Bitmap?>(null) }
     var compressedIsSynthetic by remember { mutableStateOf(false) }
 
     val compressedPath = CompressionPreviewFrames.resolveCompressedPreviewPath(
@@ -104,68 +118,132 @@ fun CompressionComparePreview(
         encodeOutputPath,
     )
 
+    LaunchedEffect(sourceUri, fileKind, previewFramePercent, durationMs) {
+        if (isPhoto || sourceUri == null) return@LaunchedEffect
+        originalBitmap = CompressionPreviewFrames.loadVideoFrame(
+            context,
+            sourceUri,
+            previewFramePercent,
+            durationMs,
+        )
+    }
+
+    var lastSyntheticStep by remember { mutableIntStateOf(-1) }
+
     LaunchedEffect(
-        sourceUri,
-        fileKind,
-        displayPercent,
-        durationMs,
-        livePercent,
-        encodeOutputPath,
-        finishedOutputPath,
+        originalBitmap,
+        syntheticStepPercent,
         jobSettings,
         videoMeta,
+        encodeOutputPath,
+        finishedOutputPath,
+    ) {
+        if (isPhoto) return@LaunchedEffect
+        val path = CompressionPreviewFrames.resolveCompressedPreviewPath(
+            finishedOutputPath,
+            encodeOutputPath,
+        )
+        val original = originalBitmap
+        if (path != null || original == null || jobSettings == null || videoMeta == null) {
+            return@LaunchedEffect
+        }
+        if (syntheticStepPercent == lastSyntheticStep && compressedIsSynthetic && compressedBitmap != null) {
+            return@LaunchedEffect
+        }
+        compressedBitmap = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
+        compressedIsSynthetic = true
+        lastSyntheticStep = syntheticStepPercent
+        // #region agent log
+        DebugSessionLog.log(
+            context,
+            "P1",
+            "CompressionComparePreview.kt:synthetic",
+            "synthetic_once",
+            mapOf(
+                "syntheticStepPercent" to syntheticStepPercent,
+                "origWxH" to "${original.width}x${original.height}",
+                "compWxH" to "${compressedBitmap?.width}x${compressedBitmap?.height}",
+            ),
+            runId = "preview-stable",
+        )
+        // #endregion
+    }
+
+    LaunchedEffect(
+        sourceUri,
+        previewFramePercent,
+        durationMs,
+        liveEncodeBucket,
+        encodeOutputPath,
+        finishedOutputPath,
     ) {
         if (isPhoto || sourceUri == null) return@LaunchedEffect
+        var lastEncodedPollKey = -1
+        var lastLoggedBranch = ""
         while (isActive) {
-            val original = CompressionPreviewFrames.loadVideoFrame(
-                context,
-                sourceUri,
-                displayPercent,
-                durationMs,
-            )
-            originalBitmap = original
             val path = CompressionPreviewFrames.resolveCompressedPreviewPath(
                 finishedOutputPath,
                 encodeOutputPath,
             )
-            val encoded = path?.let {
-                CompressionPreviewFrames.loadEncodedCompareFrame(
-                    it,
-                    durationMs,
-                    displayPercent,
-                    livePercent.coerceIn(0, 100),
+            if (path == null) {
+                delay(800)
+                continue
+            }
+            val pollKey = (previewFramePercent * 1000) + liveEncodeBucket
+            if (pollKey == lastEncodedPollKey) {
+                delay(800)
+                continue
+            }
+            val encodePct = livePercentRef.intValue.coerceIn(0, 100)
+            val encoded = CompressionPreviewFrames.loadEncodedCompareFrame(
+                path,
+                durationMs,
+                previewFramePercent,
+                encodePct,
+            )
+            if (encoded != null && pollKey != lastEncodedPollKey) {
+                compressedBitmap = encoded
+                compressedIsSynthetic = false
+                lastEncodedPollKey = pollKey
+            }
+            val branch = when {
+                encoded != null -> "encoded"
+                compressedBitmap != null && compressedIsSynthetic -> "synthetic"
+                compressedBitmap != null -> "held_encoded"
+                else -> "none"
+            }
+            val wipeMode = when {
+                originalBitmap != null && compressedBitmap != null -> "wipe"
+                originalBitmap != null -> "original_only"
+                compressedBitmap != null -> "compressed_only"
+                else -> "loading"
+            }
+            // #region agent log
+            if (branch != lastLoggedBranch) {
+                lastLoggedBranch = branch
+                DebugSessionLog.log(
+                    context,
+                    "P2",
+                    "CompressionComparePreview.kt:encodedPoll",
+                    "branch_change",
+                    mapOf(
+                        "branch" to branch,
+                        "wipeMode" to wipeMode,
+                        "pollKey" to pollKey,
+                        "compWxH" to "${compressedBitmap?.width}x${compressedBitmap?.height}",
+                        "livePercent" to livePercent,
+                    ),
+                    runId = "preview-stable",
                 )
             }
-            when {
-                encoded != null -> {
-                    compressedBitmap = encoded
-                    lastGoodCompressed = encoded
-                    compressedIsSynthetic = false
-                }
-                original != null && jobSettings != null && videoMeta != null -> {
-                    compressedBitmap = CompressionPreviewSynthetic.fromOriginal(
-                        original,
-                        videoMeta,
-                        jobSettings,
-                    )
-                    compressedIsSynthetic = true
-                }
-                livePercent >= 100 -> {
-                    compressedBitmap = lastGoodCompressed
-                    compressedIsSynthetic = false
-                }
-                else -> {
-                    compressedBitmap = null
-                    compressedIsSynthetic = false
-                }
-            }
-            if (encoded != null && livePercent >= 100) break
-            delay(600)
+            // #endregion
+            if (livePercentRef.intValue >= 100 && encoded != null) break
+            delay(800)
         }
     }
 
     val beforeImage = remember(originalBitmap) { originalBitmap?.asImageBitmap() }
-    val afterImage = remember(compressedBitmap) { compressedBitmap?.asImageBitmap() }
+    val afterImage = remember(compressedBitmap, compressedIsSynthetic) { compressedBitmap?.asImageBitmap() }
 
     var wipeFraction by remember { mutableFloatStateOf(0.5f) }
     var scale by remember { mutableFloatStateOf(1f) }
@@ -193,7 +271,7 @@ fun CompressionComparePreview(
                         onTransform = { newScale, newOx, newOy ->
                             scale = newScale
                             offsetX = newOx
-                            offsetY = newOy
+                            offsetY = offsetY
                         },
                     ) {
                         PhotoCompareContent(sourceUri, compressedPath)
@@ -211,48 +289,47 @@ fun CompressionComparePreview(
                     val dividerDp = with(LocalDensity.current) { dividerX.toDp() }
                     val fullWidth = maxWidth
 
-                    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-                        val newScale = (scale * zoomChange).coerceIn(1f, 4f)
-                        scale = newScale
-                        if (newScale <= 1f) {
-                            offsetX = 0f
-                            offsetY = 0f
-                        } else {
-                            offsetX = clampPanOffset(offsetX + panChange.x, widthPx, newScale)
-                            offsetY = clampPanOffset(offsetY + panChange.y, heightPx, newScale)
-                        }
-                    }
-
-                    val imageTransform = Modifier.graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offsetX
-                        translationY = offsetY
-                    }
-
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .transformable(transformState)
-                            .pointerInput(canStepBack, canStepForward) {
-                                detectTapGestures { offset ->
-                                    if (offset.x < size.width / 3f && canStepBack) {
-                                        frameIndex = CompressionPreviewMilestones.stepFrameIndex(
-                                            frameIndex,
-                                            milestones.value.lastIndex,
-                                            -1,
-                                        ) ?: frameIndex
-                                    } else if (offset.x > size.width * 2f / 3f && canStepForward) {
-                                        frameIndex = CompressionPreviewMilestones.stepFrameIndex(
-                                            frameIndex,
-                                            milestones.value.lastIndex,
-                                            1,
-                                        ) ?: frameIndex
-                                    }
+                    Box(Modifier.fillMaxSize()) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                    translationX = offsetX
+                                    translationY = offsetY
                                 }
-                            },
-                    ) {
-                        Box(Modifier.fillMaxSize().then(imageTransform)) {
+                                .transformable(
+                                    rememberTransformableState { zoomChange, panChange, _ ->
+                                        val newScale = (scale * zoomChange).coerceIn(1f, 4f)
+                                        scale = newScale
+                                        if (newScale <= 1f) {
+                                            offsetX = 0f
+                                            offsetY = 0f
+                                        } else {
+                                            offsetX = clampPanOffset(offsetX + panChange.x, widthPx, newScale)
+                                            offsetY = clampPanOffset(offsetY + panChange.y, heightPx, newScale)
+                                        }
+                                    },
+                                )
+                                .pointerInput(canStepBack, canStepForward) {
+                                    detectTapGestures { offset ->
+                                        if (offset.x < size.width / 3f && canStepBack) {
+                                            frameIndex = CompressionPreviewMilestones.stepFrameIndex(
+                                                frameIndex,
+                                                milestones.value.lastIndex,
+                                                -1,
+                                            ) ?: frameIndex
+                                        } else if (offset.x > size.width * 2f / 3f && canStepForward) {
+                                            frameIndex = CompressionPreviewMilestones.stepFrameIndex(
+                                                frameIndex,
+                                                milestones.value.lastIndex,
+                                                1,
+                                            ) ?: frameIndex
+                                        }
+                                    }
+                                },
+                        ) {
                             CompareWipeContent(
                                 beforeImage = beforeImage,
                                 afterImage = afterImage,
@@ -260,34 +337,33 @@ fun CompressionComparePreview(
                                 fullWidth = fullWidth,
                             )
                         }
-                    }
-
-                    Box(
-                        Modifier
-                            .fillMaxHeight()
-                            .width(24.dp)
-                            .offset { IntOffset(dividerX - 12, 0) }
-                            .pointerInput(widthPx) {
-                                detectHorizontalDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    wipeFraction = (wipeFraction + dragAmount / widthPx)
-                                        .coerceIn(0.05f, 0.95f)
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
                         Box(
                             Modifier
                                 .fillMaxHeight()
-                                .width(3.dp)
-                                .background(MaterialTheme.colorScheme.primary),
+                                .width(24.dp)
+                                .offset { IntOffset(dividerX - 12, 0) }
+                                .pointerInput(widthPx) {
+                                    detectHorizontalDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        wipeFraction = (wipeFraction + dragAmount / widthPx)
+                                            .coerceIn(0.05f, 0.95f)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxHeight()
+                                    .width(3.dp)
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                        }
+                        LabelChip("Original", Modifier.align(Alignment.TopStart))
+                        LabelChip(
+                            if (compressedIsSynthetic) "Compressed (est.)" else "Compressed",
+                            Modifier.align(Alignment.TopEnd),
                         )
                     }
-                    LabelChip("Original", Modifier.align(Alignment.TopStart))
-                    LabelChip(
-                        if (compressedIsSynthetic) "Compressed (est.)" else "Compressed",
-                        Modifier.align(Alignment.TopEnd),
-                    )
                 }
             }
         }
@@ -307,10 +383,11 @@ private fun CompareWipeContent(
     dividerDp: Dp,
     fullWidth: Dp,
 ) {
+    val rightImage = afterImage ?: beforeImage
     when {
-        beforeImage != null && afterImage != null -> {
+        beforeImage != null && rightImage != null -> {
             Image(
-                bitmap = afterImage,
+                bitmap = rightImage,
                 contentDescription = "Compressed",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

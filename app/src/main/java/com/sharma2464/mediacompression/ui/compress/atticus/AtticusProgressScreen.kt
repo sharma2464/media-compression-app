@@ -26,7 +26,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import com.sharma2464.mediacompression.debug.DebugSessionLog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
@@ -69,6 +72,31 @@ fun AtticusProgressScreen(
         label = "progress",
     )
     val frameLabel = CompressionPreviewFrames.positionLabel(currentPercent, durationMs)
+    val dbg = LocalContext.current
+    // #region agent log
+    LaunchedEffect(
+        cancelResultMessage,
+        cancelInProgress,
+        showCancelConfirmation,
+        progress,
+        previewActive,
+    ) {
+        DebugSessionLog.log(
+            dbg,
+            "H1",
+            "AtticusProgressScreen.kt:compose",
+            "progress_ui_state",
+            mapOf(
+                "cancelResultMessageSet" to (cancelResultMessage != null),
+                "cancelInProgress" to cancelInProgress,
+                "showCancelConfirmation" to showCancelConfirmation,
+                "progress" to progress,
+                "previewActive" to previewActive,
+                "showsProgressCard" to (cancelResultMessage == null && !cancelInProgress),
+            ),
+        )
+    }
+    // #endregion
 
     Column(
         modifier
@@ -92,7 +120,7 @@ fun AtticusProgressScreen(
                 videoMeta = videoMeta,
             )
         }
-        if (frameLabel != null) {
+        if (frameLabel != null && previewActive) {
             Text(
                 frameLabel,
                 style = MaterialTheme.typography.labelSmall,
@@ -101,29 +129,31 @@ fun AtticusProgressScreen(
             )
         }
         Spacer(Modifier.height(16.dp))
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        ) {
-            Column(Modifier.padding(24.dp)) {
-                Text(
-                    "Compressing…",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(16.dp))
-                LinearProgressIndicator(
-                    progress = { animated },
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                    strokeCap = StrokeCap.Round,
-                )
-                Text(
-                    "${(animated * 100).toInt()}%",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
+        if (cancelResultMessage == null && !cancelInProgress) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            ) {
+                Column(Modifier.padding(24.dp)) {
+                    Text(
+                        "Compressing…",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        progress = { animated },
+                        modifier = Modifier.fillMaxWidth().height(6.dp),
+                        strokeCap = StrokeCap.Round,
+                    )
+                    Text(
+                        "${(animated * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
             }
         }
         if (settingsLines.isNotEmpty()) {

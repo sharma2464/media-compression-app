@@ -53,6 +53,7 @@ import com.sharma2464.mediacompression.compress.CompressionProfile
 import com.sharma2464.mediacompression.compress.CompressionStrength
 import com.sharma2464.mediacompression.compress.CompressJobSummary
 import com.sharma2464.mediacompression.compress.CompressionStatus
+import com.sharma2464.mediacompression.debug.DebugSessionLog
 import com.sharma2464.mediacompression.compress.VideoMetadataProbe
 import com.sharma2464.mediacompression.compress.FileCompressionState
 import com.sharma2464.mediacompression.compress.batchOverallFraction
@@ -421,6 +422,22 @@ private fun ProgressStage(
                             it.state == FileCompressionState.CANCELLED
                         } == true
                         cancelInProgress = false
+                        // #region agent log
+                        DebugSessionLog.log(
+                            context,
+                            "H2",
+                            "CompressionBatchDialog.kt:onConfirmCancel",
+                            "cancel_work_finished",
+                            mapOf(
+                                "workState" to (state?.name ?: "null"),
+                                "hadCancelledFile" to hadCancelledFile,
+                                "batchNull" to (CompressionStatus.batch.value == null),
+                                "batchFraction" to (
+                                    CompressionStatus.batch.value?.let { batchOverallFraction(it) } ?: -1f
+                                ),
+                            ),
+                        )
+                        // #endregion
                         cancelResultMessage = when {
                             state == WorkInfo.State.CANCELLED || hadCancelledFile ->
                                 "Compression was cancelled. Any finished files were kept."

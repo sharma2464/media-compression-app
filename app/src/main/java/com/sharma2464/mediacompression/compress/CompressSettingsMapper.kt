@@ -15,6 +15,7 @@ object CompressSettingsMapper {
             return CompressionProfile.resolve(mode, CompressionStrength.BALANCED)
         }
         val tierFactor = when (settings.presetTier) {
+            PresetTier.BEST -> 0.12
             PresetTier.HIGH -> 0.45
             PresetTier.MEDIUM -> 0.30
             PresetTier.LOW -> 0.18
@@ -44,11 +45,7 @@ object CompressSettingsMapper {
             outputVideoHeight = planned.outputVideoHeight.takeIf { it > 0 }
             plannedFps = planned.outputFps
             plannedAudioBps = planned.audioBitrateBps
-            videoCodec = if (planned.videoMime == androidx.media3.common.MimeTypes.VIDEO_H264) {
-                VideoCodec.H264
-            } else {
-                VideoCodec.H265
-            }
+            videoCodec = VideoCodecMime.codecFromMime(planned.videoMime)
             val sourceBr = videoMeta.bitrateBps?.toDouble() ?: 4_000_000.0
             bitrateFactor = minOf(bitrateFactor, planned.videoBitrateBps / sourceBr)
         } else if (videoMeta != null && settings.platformTarget != null && videoMeta.durationMs > 0) {

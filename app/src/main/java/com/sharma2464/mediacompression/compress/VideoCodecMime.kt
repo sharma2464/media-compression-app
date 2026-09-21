@@ -68,6 +68,14 @@ object VideoCodecMime {
         if (hasEncoder(MimeTypes.VIDEO_AV1)) supported.add(MimeTypes.VIDEO_AV1)
         return supported.distinct()
     }
+
+    /** AV1 → H.265 → H.264 using device encoder availability (or [supported] when provided). */
+    fun pickEfficientMime(allCodecsEnabled: Boolean, supported: List<String>? = null): String {
+        val codecs = supported ?: supportedCodecs(allCodecsEnabled)
+        if (codecs.any { it.equals(MimeTypes.VIDEO_AV1, ignoreCase = true) }) return MimeTypes.VIDEO_AV1
+        if (codecs.any { it.equals(MimeTypes.VIDEO_H265, ignoreCase = true) }) return MimeTypes.VIDEO_H265
+        return MimeTypes.VIDEO_H264
+    }
 }
 
 fun CompressJobSettings.effectiveVideoMime(): String =

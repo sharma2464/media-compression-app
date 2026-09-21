@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -117,6 +118,11 @@ fun CompressFlowPreview(
             meta = videoMeta,
             videoFile = primaryVideo,
         )
+    }
+    LaunchedEffect(hasVideo, videoMeta, sizingBytes) {
+        if (hasVideo && videoMeta != null && sizingBytes > 0) {
+            actions.applyPreset(PresetTier.BEST)
+        }
     }
     fun finalizedJob(): CompressJobSettings {
         val meta = videoMeta
@@ -217,6 +223,7 @@ fun CompressFlowPreview(
 }
 
 fun strengthFromJob(job: CompressJobSettings): CompressionStrength = when (job.presetTier) {
+    PresetTier.BEST -> CompressionStrength.SMALL
     PresetTier.HIGH -> CompressionStrength.FAST
     PresetTier.MEDIUM -> CompressionStrength.BALANCED
     PresetTier.LOW -> CompressionStrength.SMALL

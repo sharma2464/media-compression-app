@@ -8,9 +8,9 @@ import org.junit.Test
 class CompressSettingsMapperTest {
 
     @Test
-    fun default_maps_to_balanced_strength() {
+    fun default_best_preset_maps_to_small_strength() {
         val profile = CompressSettingsMapper.toProfile(CompressionMode.ADAPTIVE, CompressJobSettings.DEFAULT, null)
-        assertEquals(CompressionStrength.BALANCED, profile.strength)
+        assertEquals(CompressionStrength.SMALL, profile.strength)
     }
 
     @Test
@@ -25,7 +25,7 @@ class CompressSettingsMapperTest {
     @Test
     fun summaryLabel_includes_tier() {
         val label = CompressSettingsMapper.summaryLabel(CompressJobSettings.DEFAULT)
-        assertTrue(label.contains("Medium"))
+        assertTrue(label.contains("Best"))
     }
 
     @Test

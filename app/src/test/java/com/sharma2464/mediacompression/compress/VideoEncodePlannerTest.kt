@@ -1,5 +1,6 @@
 package com.sharma2464.mediacompression.compress
 
+import androidx.media3.common.MimeTypes
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,5 +45,32 @@ class VideoEncodePlannerTest {
             planned.videoBitrateBps < 1_200_000,
         )
         assertTrue(planned.outputVideoHeight > 0 && planned.outputVideoHeight <= 2160)
+    }
+
+    @Test
+    fun av1_target_uses_lower_floor_than_h264_at_same_size() {
+        val meta = VideoMetadata(1920, 1080, 60_000, 8_000_000, 30f)
+        val targetBytes = (15L * 1024 * 1024)
+        val av1 = VideoEncodePlanner.planWithDuration(
+            file = java.io.File("/nonexistent"),
+            settings = CompressJobSettings(
+                targetSizeMb = 15f,
+                videoCodecMime = MimeTypes.VIDEO_AV1,
+                videoCodec = VideoCodec.AV1,
+            ),
+            videoMeta = meta,
+            targetBytes = targetBytes,
+        )
+        val h264 = VideoEncodePlanner.planWithDuration(
+            file = java.io.File("/nonexistent"),
+            settings = CompressJobSettings(
+                targetSizeMb = 15f,
+                videoCodecMime = MimeTypes.VIDEO_H264,
+                videoCodec = VideoCodec.H264,
+            ),
+            videoMeta = meta,
+            targetBytes = targetBytes,
+        )
+        assertTrue(av1.videoBitrateBps <= h264.videoBitrateBps)
     }
 }

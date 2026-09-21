@@ -23,6 +23,7 @@ class CompressFlowActions(
         val config = appSettings.qualityPresetFor(tier)
         val targetMb = (originalMb * config.sizeRatio).coerceAtLeast(0.1f)
         val slider = when (tier) {
+            PresetTier.BEST -> 65
             PresetTier.HIGH -> 75
             PresetTier.MEDIUM -> 50
             PresetTier.LOW -> 25
@@ -35,6 +36,15 @@ class CompressFlowActions(
             removeAudio = false,
             audioBitrateKbps = if (config.audioBitrate > 0) config.audioBitrate / 1000 else null,
         )
+        if (tier == PresetTier.BEST) {
+            val mime = VideoCodecMime.pickEfficientMime(appSettings.allCodecsEnabled)
+            next = next.copy(
+                videoCodecMime = mime,
+                videoCodec = codecFromMime(mime),
+                audioFormat = AudioFormatChoice.AAC,
+                resolution = ResolutionChoice.ORIGINAL,
+            )
+        }
         if (meta != null && config.resolutionShortSide > 0) {
             val m = meta
             val originalShort = min(m.width, m.height)

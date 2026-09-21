@@ -41,10 +41,18 @@ object VideoCompressionPlanner {
         }
 
         if (!isOutputSupported(mime, meta.width, meta.height, outputHeight, outputFps)) {
-            if (mime != MimeTypes.VIDEO_H264 && isOutputSupported(MimeTypes.VIDEO_H264, meta.width, meta.height, outputHeight, outputFps)) {
-                mime = MimeTypes.VIDEO_H264
-                warnings.add("Using H.264 for broader encoder support.")
-            } else {
+            val fallbackChain = listOf(MimeTypes.VIDEO_H265, MimeTypes.VIDEO_H264)
+                .filter { !it.equals(mime, ignoreCase = true) }
+            var replaced = false
+            for (fallback in fallbackChain) {
+                if (isOutputSupported(fallback, meta.width, meta.height, outputHeight, outputFps)) {
+                    mime = fallback
+                    warnings.add("Using ${VideoCodecMime.labelForMime(fallback)} for encoder support.")
+                    replaced = true
+                    break
+                }
+            }
+            if (!replaced) {
                 val heights = listOf(1080, 720, 540, 480).filter { it in 2..meta.height }
                 val fpsList = listOf(30, 24)
                 var ok = false

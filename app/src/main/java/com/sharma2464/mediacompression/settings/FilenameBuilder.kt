@@ -23,7 +23,7 @@ object FilenameBuilder {
         return buildStem(
             segments = segments,
             originalDisplayName = "$sampleOriginalName.mp4",
-            job = CompressJobSettings.DEFAULT.copy(presetTier = PresetTier.MEDIUM),
+            job = CompressJobSettings.DEFAULT.copy(presetTier = PresetTier.BEST),
             profile = CompressionProfile.resolve(CompressionMode.ADAPTIVE, CompressionStrength.BALANCED),
             meta = VideoMetadata(1920, 1080, 60_000, 5_000_000, 30f),
         )
@@ -82,6 +82,7 @@ object FilenameBuilder {
         }
         val audioStatusStr = if (job.removeAudio) "NoAudio" else "WithAudio"
         val presetStr = when (job.presetTier) {
+            PresetTier.BEST -> "Best"
             PresetTier.HIGH -> "High"
             PresetTier.MEDIUM -> "Medium"
             PresetTier.LOW -> "Low"

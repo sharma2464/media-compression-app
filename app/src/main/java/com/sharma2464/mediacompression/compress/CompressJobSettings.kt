@@ -2,7 +2,7 @@ package com.sharma2464.mediacompression.compress
 
 import org.json.JSONObject
 
-enum class PresetTier { HIGH, MEDIUM, LOW }
+enum class PresetTier { BEST, HIGH, MEDIUM, LOW }
 
 enum class PlatformPreset(val label: String, val hint: String, val maxBytes: Long) {
     GITHUB("GitHub", "25 MB", 25L * 1024 * 1024),
@@ -43,7 +43,7 @@ enum class AudioFormatChoice {
 
 data class CompressJobSettings(
     val qualitySlider: Int = 50,
-    val presetTier: PresetTier = PresetTier.MEDIUM,
+    val presetTier: PresetTier = PresetTier.BEST,
     /** Target output size in MB (Josh Compressor-style slider / size chips). */
     val targetSizeMb: Float = 10f,
     val platformTarget: PlatformPreset? = null,
@@ -81,7 +81,7 @@ data class CompressJobSettings(
                 val o = JSONObject(raw)
                 CompressJobSettings(
                     qualitySlider = o.optInt("qualitySlider", 50),
-                    presetTier = PresetTier.valueOf(o.optString("presetTier", PresetTier.MEDIUM.name)),
+                    presetTier = PresetTier.valueOf(o.optString("presetTier", PresetTier.BEST.name)),
                     targetSizeMb = o.optDouble("targetSizeMb", 10.0).toFloat(),
                     platformTarget = o.optString("platformTarget", "").takeIf { it.isNotEmpty() }
                         ?.let { PlatformPreset.valueOf(it) },

@@ -89,6 +89,7 @@ fun AtticusPresetsTab(
     ) {
         Text("Quality preset", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
         val presets = listOf(
+            Triple(PresetTier.BEST, "Best", "AV1, ~85% smaller, original resolution"),
             Triple(PresetTier.HIGH, "High", "Best quality, larger files"),
             Triple(PresetTier.MEDIUM, "Medium", "Balanced size and quality"),
             Triple(PresetTier.LOW, "Low", "Smallest files"),
@@ -102,6 +103,7 @@ fun AtticusPresetsTab(
         ) {
             presets.forEach { (tier, title, _) ->
                 val enabled = when (tier) {
+                    PresetTier.BEST -> true
                     PresetTier.MEDIUM -> ui.originalHeight >= 1080 || ui.originalHeight == 0
                     PresetTier.LOW -> ui.originalHeight >= 720 || ui.originalHeight == 0
                     else -> true
@@ -114,7 +116,7 @@ fun AtticusPresetsTab(
                     },
                     label = title,
                     enabled = enabled,
-                    modifier = if (tier == PresetTier.MEDIUM) Modifier.testTag("compress_tab_presets") else Modifier,
+                    modifier = if (tier == PresetTier.BEST) Modifier.testTag("compress_tab_presets") else Modifier,
                 )
             }
         }

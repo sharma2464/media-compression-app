@@ -176,6 +176,7 @@ fun AtticusFilenameBuilderSection(settings: AppSettings) {
 fun AtticusPresetsSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val settings = remember(context) { AppSettings(context) }
+    var best by remember { mutableStateOf(settings.bestQualityPreset) }
     var high by remember { mutableStateOf(settings.highQualityPreset) }
     var medium by remember { mutableStateOf(settings.mediumQualityPreset) }
     var low by remember { mutableStateOf(settings.lowQualityPreset) }
@@ -191,12 +192,14 @@ fun AtticusPresetsSettingsScreen(onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 16.dp, top = 8.dp),
         )
+        QualityPresetRow("Best", presetSummary(best)) { editingQuality = "Best" }
         QualityPresetRow("High", presetSummary(high)) { editingQuality = "High" }
         QualityPresetRow("Medium", presetSummary(medium)) { editingQuality = "Medium" }
         QualityPresetRow("Low", presetSummary(low)) { editingQuality = "Low" }
         OutlinedButton(
             onClick = {
                 settings.resetQualityPresets()
+                best = settings.bestQualityPreset
                 high = settings.highQualityPreset
                 medium = settings.mediumQualityPreset
                 low = settings.lowQualityPreset
@@ -245,6 +248,7 @@ fun AtticusPresetsSettingsScreen(onBack: () -> Unit) {
 
     editingQuality?.let { name ->
         val config = when (name) {
+            "Best" -> best
             "High" -> high
             "Medium" -> medium
             else -> low
@@ -255,6 +259,7 @@ fun AtticusPresetsSettingsScreen(onBack: () -> Unit) {
             onDismiss = { editingQuality = null },
             onSave = { updated ->
                 when (name) {
+                    "Best" -> { best = updated; settings.bestQualityPreset = updated }
                     "High" -> { high = updated; settings.highQualityPreset = updated }
                     "Medium" -> { medium = updated; settings.mediumQualityPreset = updated }
                     else -> { low = updated; settings.lowQualityPreset = updated }

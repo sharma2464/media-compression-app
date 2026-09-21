@@ -34,6 +34,7 @@ data class QualityPresetConfig(
             }.getOrDefault(QualityPresetConfig())
         }
 
+        val defaultBest = QualityPresetConfig(0, 30, 0.15f, 160_000, "Best")
         val defaultHigh = QualityPresetConfig(0, 0, 0.7f, 320_000)
         val defaultMedium = QualityPresetConfig(1080, 30, 0.4f, 192_000)
         val defaultLow = QualityPresetConfig(720, 30, 0.2f, 128_000)

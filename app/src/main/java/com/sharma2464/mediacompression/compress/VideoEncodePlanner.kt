@@ -38,13 +38,14 @@ object VideoEncodePlanner {
             else -> 128_000
         }
 
+        val effectiveCodec = VideoCodecMime.codecFromMime(settings.effectiveVideoMime())
         val targetMb = targetBytes?.let { it / (1024f * 1024f) }
         if (targetMb != null && targetMb > 0f) {
             val adjusted = autoAdjustForTargetMb(
                 originalHeight = origH,
                 originalWidth = origW,
                 originalFps = origFps,
-                videoCodec = settings.videoCodec,
+                videoCodec = effectiveCodec,
                 removeAudio = settings.removeAudio,
                 durationMs = durationMs,
                 targetMb = targetMb,
@@ -177,7 +178,11 @@ object VideoEncodePlanner {
             height >= 480 -> 500_000L
             else -> 350_000L
         }
-        if (codec == VideoCodec.H265) base = (base * 0.7).toLong()
+        base = when (codec) {
+            VideoCodec.H265 -> (base * 0.7).toLong()
+            VideoCodec.AV1 -> (base * 0.55).toLong()
+            else -> base
+        }
         if (fps > 45) base = (base * 1.5).toLong()
         return base
     }
@@ -198,7 +203,7 @@ object VideoEncodePlanner {
         val overheadBits = targetBits * 0.02 + 50 * 1024 * 8
         val videoBits = (targetBits - audioBits - overheadBits).coerceAtLeast(targetBits * 0.1)
         val calculated = (videoBits / durationSec).toLong()
-        val codec = if (videoMime == MimeTypes.VIDEO_H265) VideoCodec.H265 else VideoCodec.H264
+        val codec = VideoCodecMime.codecFromMime(videoMime)
         val minBr = minVideoBitrateBps(outputHeight, outputFps, codec)
         val cap = if (originalBitrate > 0) originalBitrate.toLong() else Long.MAX_VALUE
         val sec = durationSec.toFloat()

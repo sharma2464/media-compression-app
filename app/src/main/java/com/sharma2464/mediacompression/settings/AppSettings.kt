@@ -92,6 +92,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_SHOW_TARGET_SIZE_PRESET, true)
         set(value) = prefs.edit { putBoolean(KEY_SHOW_TARGET_SIZE_PRESET, value) }
 
+    var bestQualityPreset: QualityPresetConfig
+        get() = prefs.getString(KEY_PRESET_BEST, null)?.let { QualityPresetConfig.fromJson(it) }
+            ?: QualityPresetConfig.defaultBest
+        set(value) = prefs.edit { putString(KEY_PRESET_BEST, value.toJson().toString()) }
+
     var highQualityPreset: QualityPresetConfig
         get() = prefs.getString(KEY_PRESET_HIGH, null)?.let { QualityPresetConfig.fromJson(it) }
             ?: QualityPresetConfig.defaultHigh
@@ -141,12 +146,14 @@ class AppSettings(context: Context) {
 
     fun qualityPresetFor(tier: com.sharma2464.mediacompression.compress.PresetTier): QualityPresetConfig =
         when (tier) {
+            com.sharma2464.mediacompression.compress.PresetTier.BEST -> bestQualityPreset
             com.sharma2464.mediacompression.compress.PresetTier.HIGH -> highQualityPreset
             com.sharma2464.mediacompression.compress.PresetTier.MEDIUM -> mediumQualityPreset
             com.sharma2464.mediacompression.compress.PresetTier.LOW -> lowQualityPreset
         }
 
     fun resetQualityPresets() {
+        bestQualityPreset = QualityPresetConfig.defaultBest
         highQualityPreset = QualityPresetConfig.defaultHigh
         mediumQualityPreset = QualityPresetConfig.defaultMedium
         lowQualityPreset = QualityPresetConfig.defaultLow
@@ -204,6 +211,7 @@ class AppSettings(context: Context) {
         private const val KEY_SHOW_BITRATE = "show_bitrate"
         private const val KEY_USE_MBPS = "use_mbps"
         private const val KEY_SHOW_TARGET_SIZE_PRESET = "show_target_size_preset"
+        private const val KEY_PRESET_BEST = "preset_best"
         private const val KEY_PRESET_HIGH = "preset_high"
         private const val KEY_PRESET_MEDIUM = "preset_medium"
         private const val KEY_PRESET_LOW = "preset_low"

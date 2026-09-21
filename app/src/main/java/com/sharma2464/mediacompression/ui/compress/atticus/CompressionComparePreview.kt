@@ -130,22 +130,37 @@ fun CompressionComparePreview(
         finishedOutputPath,
         encodeOutputPath,
     )
-
-    LaunchedEffect(sourceUri, fileKind, previewFramePercent, durationMs) {
-        if (isPhoto || sourceUri == null) return@LaunchedEffect
-        originalBitmap = CompressionPreviewFrames.loadVideoFrame(
-            context,
-            sourceUri,
-            previewFramePercent,
-            durationMs,
-        )
+    val encodingInProgress = compressedPath != null && livePercent < 100
+    val compareTimelinePercent = when {
+        !encodingInProgress -> previewFramePercent
+        !atLiveEdge -> previewFramePercent.coerceAtMost(livePercent)
+        else -> (livePercent / CompressionPreviewMilestones.PERCENT_STEP) *
+            CompressionPreviewMilestones.PERCENT_STEP
     }
 
     var lastSyntheticStep by remember { mutableIntStateOf(-1) }
 
+    fun applySyntheticFromOriginal(original: Bitmap) {
+        if (jobSettings == null || videoMeta == null) return
+        val synthetic = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
+        compressedBitmap = matchPreviewBitmapSize(synthetic, original)
+        if (synthetic !== compressedBitmap) synthetic.recycle()
+        compressedIsSynthetic = true
+    }
+
+    LaunchedEffect(sourceUri, fileKind, compareTimelinePercent, durationMs) {
+        if (isPhoto || sourceUri == null) return@LaunchedEffect
+        originalBitmap = CompressionPreviewFrames.loadVideoFrame(
+            context,
+            sourceUri,
+            compareTimelinePercent,
+            durationMs,
+        )
+    }
+
     LaunchedEffect(
         originalBitmap,
-        syntheticStepPercent,
+        compareTimelinePercent,
         jobSettings,
         videoMeta,
         encodeOutputPath,
@@ -156,18 +171,14 @@ fun CompressionComparePreview(
             finishedOutputPath,
             encodeOutputPath,
         )
-        val original = originalBitmap
-        if (path != null || original == null || jobSettings == null || videoMeta == null) {
+        val original = originalBitmap ?: return@LaunchedEffect
+        if (jobSettings == null || videoMeta == null) return@LaunchedEffect
+        if (!compressedIsSynthetic && compressedBitmap != null) return@LaunchedEffect
+        if (lastSyntheticStep == compareTimelinePercent && compressedBitmap != null) {
             return@LaunchedEffect
         }
-        if (syntheticStepPercent == lastSyntheticStep && compressedIsSynthetic && compressedBitmap != null) {
-            return@LaunchedEffect
-        }
-        val synthetic = CompressionPreviewSynthetic.fromOriginal(original, videoMeta, jobSettings)
-        compressedBitmap = matchPreviewBitmapSize(synthetic, original)
-        if (synthetic !== compressedBitmap) synthetic.recycle()
-        compressedIsSynthetic = true
-        lastSyntheticStep = syntheticStepPercent
+        applySyntheticFromOriginal(original)
+        lastSyntheticStep = compareTimelinePercent
         // #region agent log
         DebugSessionLog.log(
             context,
@@ -175,7 +186,8 @@ fun CompressionComparePreview(
             "CompressionComparePreview.kt:synthetic",
             "synthetic_once",
             mapOf(
-                "syntheticStepPercent" to syntheticStepPercent,
+                "compareTimelinePercent" to compareTimelinePercent,
+                "encoding" to (path != null),
                 "origWxH" to "${original.width}x${original.height}",
                 "compWxH" to "${compressedBitmap?.width}x${compressedBitmap?.height}",
             ),
@@ -186,7 +198,7 @@ fun CompressionComparePreview(
 
     LaunchedEffect(
         sourceUri,
-        previewFramePercent,
+        compareTimelinePercent,
         durationMs,
         liveEncodeBucket,
         encodeOutputPath,
@@ -204,7 +216,7 @@ fun CompressionComparePreview(
                 delay(800)
                 continue
             }
-            val pollKey = (previewFramePercent * 1000) + liveEncodeBucket
+            val pollKey = (compareTimelinePercent * 1000) + liveEncodeBucket
             if (pollKey == lastEncodedPollKey) {
                 delay(800)
                 continue
@@ -213,7 +225,7 @@ fun CompressionComparePreview(
             val encoded = CompressionPreviewFrames.loadEncodedCompareFrame(
                 path,
                 durationMs,
-                previewFramePercent,
+                compareTimelinePercent,
                 encodePct,
             )
             if (encoded != null && pollKey != lastEncodedPollKey) {
@@ -223,6 +235,12 @@ fun CompressionComparePreview(
                 if (matched !== encoded) encoded.recycle()
                 compressedIsSynthetic = false
                 lastEncodedPollKey = pollKey
+            } else if (encoded == null) {
+                val original = originalBitmap
+                if (original != null && jobSettings != null && videoMeta != null) {
+                    applySyntheticFromOriginal(original)
+                    lastSyntheticStep = compareTimelinePercent
+                }
             }
             val branch = when {
                 encoded != null -> "encoded"
@@ -248,7 +266,10 @@ fun CompressionComparePreview(
                         "branch" to branch,
                         "wipeMode" to wipeMode,
                         "pollKey" to pollKey,
+                        "compareTimelinePercent" to compareTimelinePercent,
+                        "previewFramePercent" to previewFramePercent,
                         "compWxH" to "${compressedBitmap?.width}x${compressedBitmap?.height}",
+                        "origWxH" to "${originalBitmap?.width}x${originalBitmap?.height}",
                         "livePercent" to livePercent,
                     ),
                     runId = "preview-stable",
